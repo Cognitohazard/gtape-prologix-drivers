@@ -38,11 +38,11 @@ class TestTDS3054:
 
     def test_get_id(self, tds3054, mock_adapter):
         """Test instrument identification query."""
-        mock_adapter.ask.return_value = "TEKTRONIX,TDS3054,0,CF:91.1CT"
+        mock_adapter.read.return_value = "TEKTRONIX,TDS3054,0,CF:91.1CT"
 
         result = tds3054.get_id()
 
-        mock_adapter.ask.assert_called_with("*IDN?")
+        mock_adapter.write.assert_called_with("*IDN?")
         assert "TDS3054" in result
 
     def test_reset(self, tds3054, mock_adapter):
@@ -53,16 +53,16 @@ class TestTDS3054:
 
     def test_get_active_channels_all(self, tds3054, mock_adapter):
         """Test detecting all 4 channels active."""
-        mock_adapter.ask.side_effect = ["1", "1", "1", "1"]
+        mock_adapter.read.side_effect = ["1", "1", "1", "1"]
 
         channels = tds3054.get_active_channels()
 
-        assert mock_adapter.ask.call_count == 4
+        assert mock_adapter.read.call_count == 4
         assert channels == ["CH1", "CH2", "CH3", "CH4"]
 
     def test_get_active_channels_some(self, tds3054, mock_adapter):
         """Test detecting some channels active."""
-        mock_adapter.ask.side_effect = ["1", "0", "1", "0"]
+        mock_adapter.read.side_effect = ["1", "0", "1", "0"]
 
         channels = tds3054.get_active_channels()
 
@@ -70,7 +70,7 @@ class TestTDS3054:
 
     def test_get_active_channels_none(self, tds3054, mock_adapter):
         """Test when no channels are active."""
-        mock_adapter.ask.side_effect = ["0", "0", "0", "0"]
+        mock_adapter.read.side_effect = ["0", "0", "0", "0"]
 
         channels = tds3054.get_active_channels()
 
@@ -78,7 +78,7 @@ class TestTDS3054:
 
     def test_get_active_channels_on_off_format(self, tds3054, mock_adapter):
         """Test channel display query with ON/OFF format."""
-        mock_adapter.ask.side_effect = ["ON", "OFF", "ON", "OFF"]
+        mock_adapter.read.side_effect = ["ON", "OFF", "ON", "OFF"]
 
         channels = tds3054.get_active_channels()
 
@@ -114,12 +114,14 @@ class TestTDS3054:
 
     def test_set_record_length(self, tds3054, mock_adapter):
         """Test setting record length."""
-        mock_adapter.ask.return_value = "10000"
+        mock_adapter.read.return_value = "10000"
 
         actual = tds3054.set_record_length(10000)
 
-        mock_adapter.write.assert_called_with("HORizontal:RECOrdlength 10000")
-        mock_adapter.ask.assert_called_with("HORizontal:RECOrdlength?")
+        # Verify both the set command and query were sent
+        write_calls = [str(c) for c in mock_adapter.write.call_args_list]
+        assert any("HORizontal:RECOrdlength 10000" in c for c in write_calls)
+        assert any("HORizontal:RECOrdlength?" in c for c in write_calls)
         assert actual == 10000
 
     def test_set_timebase(self, tds3054, mock_adapter):
@@ -130,11 +132,11 @@ class TestTDS3054:
 
     def test_get_sample_rate(self, tds3054, mock_adapter):
         """Test querying sample rate."""
-        mock_adapter.ask.return_value = "5.0E9"
+        mock_adapter.read.return_value = "5.0E9"
 
         rate = tds3054.get_sample_rate()
 
-        mock_adapter.ask.assert_called_with("HORizontal:SAMPLERate?")
+        mock_adapter.write.assert_called_with("HORizontal:SAMPLERate?")
         assert rate == 5.0e9
 
     def test_set_trigger_source(self, tds3054, mock_adapter):
@@ -214,16 +216,16 @@ class TestTDS3012B:
 
     def test_get_active_channels_both(self, tds3012b, mock_adapter):
         """Test detecting both channels active."""
-        mock_adapter.ask.side_effect = ["1", "1"]
+        mock_adapter.read.side_effect = ["1", "1"]
 
         channels = tds3012b.get_active_channels()
 
-        assert mock_adapter.ask.call_count == 2
+        assert mock_adapter.read.call_count == 2
         assert channels == ["CH1", "CH2"]
 
     def test_get_active_channels_one(self, tds3012b, mock_adapter):
         """Test detecting single channel active."""
-        mock_adapter.ask.side_effect = ["0", "1"]
+        mock_adapter.read.side_effect = ["0", "1"]
 
         channels = tds3012b.get_active_channels()
 
@@ -276,7 +278,7 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;8;"Ch1";Y;1.0E-6;0;0.0;"s";0.01;0.0;0;"V"'
         binary_data = struct.pack('>8h', 100, 200, 300, 400, 500, 600, 700, 800)
 
-        mock_adapter.ask.return_value = "8"
+        mock_adapter.read.return_value = "8"
         mock_adapter.read_line.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
@@ -309,7 +311,7 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;4;"Ch1";Y;1.0E-6;0;1.0E-3;"s";0.02;1.5;-100;"V"'
         binary_data = struct.pack('>4h', 100, 200, 300, 400)
 
-        mock_adapter.ask.return_value = "4"
+        mock_adapter.read.return_value = "4"
         mock_adapter.read_line.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
@@ -328,7 +330,7 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;10;"Ch1";Y;1.0E-6;0;0.0;"s";0.01;0.0;0;"V"'
         binary_data = struct.pack('>5h', 100, 200, 300, 400, 500)  # Only 5 of 10 points
 
-        mock_adapter.ask.return_value = "10"
+        mock_adapter.read.return_value = "10"
         mock_adapter.read_line.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
@@ -347,12 +349,11 @@ class TestWaveformReading:
 
         waveform = tds3054.read_waveform('CH3', record_length=5)
 
-        # Should not query record length
-        ask_calls = [str(c) for c in mock_adapter.ask.call_args_list]
-        assert not any("RECOrdlength" in c for c in ask_calls)
+        # Should not query record length (no RECOrdlength? in write calls)
+        write_calls = [str(c) for c in mock_adapter.write.call_args_list]
+        assert not any("RECOrdlength?" in c for c in write_calls)
 
         # Should set STOP to specified length
-        write_calls = [str(c) for c in mock_adapter.write.call_args_list]
         assert any("DATa:STOP 5" in c for c in write_calls)
 
 
@@ -361,19 +362,19 @@ class TestMeasurements:
 
     def test_measure_frequency(self, tds3054, mock_adapter):
         """Test frequency measurement."""
-        mock_adapter.ask.return_value = "1.0E6"
+        mock_adapter.read.return_value = "1.0E6"
 
         result = tds3054.measure("FREQuency", "CH1")
 
         write_calls = [str(c) for c in mock_adapter.write.call_args_list]
         assert any("MEASUrement:IMMed:SOUrce1 CH1" in c for c in write_calls)
         assert any("MEASUrement:IMMed:TYPe FREQuency" in c for c in write_calls)
-        mock_adapter.ask.assert_called_with("MEASUrement:IMMed:VALue?")
+        mock_adapter.write.assert_called_with("MEASUrement:IMMed:VALue?")
         assert result == pytest.approx(1.0e6)
 
     def test_measure_pk2pk(self, tds3054, mock_adapter):
         """Test peak-to-peak measurement."""
-        mock_adapter.ask.return_value = "3.3"
+        mock_adapter.read.return_value = "3.3"
 
         result = tds3054.measure("PK2pk", "CH2")
 
@@ -381,7 +382,7 @@ class TestMeasurements:
 
     def test_measure_mean(self, tds3054, mock_adapter):
         """Test mean measurement."""
-        mock_adapter.ask.return_value = "1.65"
+        mock_adapter.read.return_value = "1.65"
 
         result = tds3054.measure("MEAN", "CH1")
 
@@ -393,16 +394,16 @@ class TestErrorHandling:
 
     def test_check_errors_no_error(self, tds3054, mock_adapter):
         """Test error check with no errors."""
-        mock_adapter.ask.return_value = "0"
+        mock_adapter.read.return_value = "0"
 
         result = tds3054.check_errors()
 
-        mock_adapter.ask.assert_called_with("*ESR?")
+        mock_adapter.write.assert_called_with("*ESR?")
         assert result == "0"
 
     def test_check_errors_with_error(self, tds3054, mock_adapter):
         """Test error check when error exists."""
-        mock_adapter.ask.return_value = "32"  # Command error bit
+        mock_adapter.read.return_value = "32"  # Command error bit
 
         with patch('builtins.print') as mock_print:
             result = tds3054.check_errors()

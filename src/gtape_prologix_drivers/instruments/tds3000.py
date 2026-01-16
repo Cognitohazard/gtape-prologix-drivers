@@ -20,17 +20,38 @@ class WaveformData:
 
 
 class TDS3000Base:
-    """Base class for TDS3000 series oscilloscopes."""
+    """Base class for TDS3000 series oscilloscopes.
+
+    Note: TDS3000 series may need delays between query and read.
+    Uses _ask() with configurable delay for reliable communication.
+    """
 
     NUM_CHANNELS: int = 4  # Override in subclasses
+    QUERY_DELAY: float = 0.1  # Delay between write and read for queries
 
     def __init__(self, adapter):
         """Initialize TDS3000 with adapter."""
         self.adapter = adapter
 
+    def _ask(self, command: str, delay: float = None) -> str:
+        """Send query and read response with delay for TDS3000 compatibility.
+
+        Args:
+            command: SCPI query command
+            delay: Delay in seconds before reading (default: QUERY_DELAY)
+
+        Returns:
+            Response string from scope
+        """
+        if delay is None:
+            delay = self.QUERY_DELAY
+        self.adapter.write(command)
+        time.sleep(delay)
+        return self.adapter.read()
+
     def get_id(self) -> str:
         """Query instrument identification."""
-        return self.adapter.ask("*IDN?")
+        return self._ask("*IDN?")
 
     def reset(self) -> None:
         """Reset oscilloscope to default settings."""
@@ -42,7 +63,7 @@ class TDS3000Base:
         active_channels = []
         for ch in range(1, self.NUM_CHANNELS + 1):
             channel_name = f"CH{ch}"
-            response = self.adapter.ask(f"{channel_name}:DISPlay?")
+            response = self._ask(f"{channel_name}:DISPlay?")
             try:
                 # Response is "0" or "1", or "ON"/"OFF"
                 if response.strip() in ("1", "ON"):
@@ -75,7 +96,7 @@ class TDS3000Base:
         self.adapter.write(f"HORizontal:RECOrdlength {length}")
         time.sleep(0.5)
 
-        response = self.adapter.ask("HORizontal:RECOrdlength?")
+        response = self._ask("HORizontal:RECOrdlength?")
         actual_length = int(response)
         print(f"[Scope] Actual record length: {actual_length}")
         return actual_length
@@ -86,7 +107,7 @@ class TDS3000Base:
 
     def get_sample_rate(self) -> float:
         """Query current sample rate in samples per second."""
-        response = self.adapter.ask("HORizontal:SAMPLERate?")
+        response = self._ask("HORizontal:SAMPLERate?")
         return float(response)
 
     def set_trigger_source(self, source: str) -> None:
@@ -172,7 +193,7 @@ class TDS3000Base:
         self.adapter.write("DATa:STARt 1")
 
         if record_length is None:
-            response = self.adapter.ask("HORizontal:RECOrdlength?")
+            response = self._ask("HORizontal:RECOrdlength?")
             actual_record_length = int(response)
         else:
             actual_record_length = record_length
@@ -231,13 +252,13 @@ class TDS3000Base:
         """
         self.adapter.write(f"MEASUrement:IMMed:SOUrce1 {channel}")
         self.adapter.write(f"MEASUrement:IMMed:TYPe {measurement_type}")
-        response = self.adapter.ask("MEASUrement:IMMed:VALue?")
+        response = self._ask("MEASUrement:IMMed:VALue?")
         return float(response)
 
     def check_errors(self) -> str:
         """Query scope for errors using standard event status."""
         # Read and clear event status register
-        esr = self.adapter.ask("*ESR?")
+        esr = self._ask("*ESR?")
         if int(esr) != 0:
             # There's an error, try to get more info
             error_msg = f"ESR={esr}"
