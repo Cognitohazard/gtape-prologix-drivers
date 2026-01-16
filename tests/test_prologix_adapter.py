@@ -90,7 +90,7 @@ class TestPrologixAdapter(unittest.TestCase):
         adapter = PrologixAdapter(port="COM4", gpib_address=4)
         self.mock_serial.write.reset_mock()
 
-        with patch('adapters.prologix.time.sleep') as mock_sleep:
+        with patch('gtape_prologix_drivers.adapter.time.sleep') as mock_sleep:
             adapter.write("VOLT 5.0", delay=0.5)
             mock_sleep.assert_called_with(0.5)
 
