@@ -1,7 +1,6 @@
 """HP 34401A Digital Multimeter driver."""
 
 import time
-from typing import Optional
 
 
 class HP34401A:
@@ -15,17 +14,17 @@ class HP34401A:
         """Initialize HP34401A with adapter."""
         self.adapter = adapter
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset multimeter to default state (DC voltage, autorange)."""
         print("[DMM] Resetting HP34401A...")
-        if hasattr(self.adapter, 'ser'):
+        if hasattr(self.adapter, 'ser') and self.adapter.ser is not None:
             self.adapter.ser.reset_input_buffer()
         self.adapter.write("*RST")
         time.sleep(2.0)  # HP34401A genuinely needs ~2s to reset hardware
         self.adapter.write("*CLS")
         self.check_errors()
 
-    def _configure(self, scpi_func: str, range_val: float, resolution: Optional[float] = None):
+    def _configure(self, scpi_func: str, range_val: float, resolution: float | None = None) -> None:
         """Send CONF command with optional resolution."""
         if resolution is not None:
             cmd = f"CONF:{scpi_func} {range_val},{resolution}"
@@ -35,7 +34,7 @@ class HP34401A:
         self.adapter.write(cmd)
         self.check_errors()
 
-    def set_nplc(self, nplc: float = 1):
+    def set_nplc(self, nplc: float = 1) -> None:
         """Set integration time in power line cycles. Valid: 0.02, 0.2, 1, 10, 100.
 
         Lower NPLC = faster but noisier. NPLC 1 is a good balance (~20ms at 50Hz).
@@ -48,27 +47,27 @@ class HP34401A:
         """Query current NPLC setting."""
         return float(self.adapter.ask("VOLT:DC:NPLC?"))
 
-    def configure_dc_voltage(self, range_volts: float = 10, resolution: Optional[float] = None):
+    def configure_dc_voltage(self, range_volts: float = 10, resolution: float | None = None) -> None:
         """Configure for DC voltage measurement. Valid ranges: 0.1, 1, 10, 100, 1000."""
         self._configure("VOLT:DC", range_volts, resolution)
 
-    def configure_ac_voltage(self, range_volts: float = 10, resolution: Optional[float] = None):
+    def configure_ac_voltage(self, range_volts: float = 10, resolution: float | None = None) -> None:
         """Configure for AC voltage measurement."""
         self._configure("VOLT:AC", range_volts, resolution)
 
-    def configure_dc_current(self, range_amps: float = 1, resolution: Optional[float] = None):
+    def configure_dc_current(self, range_amps: float = 1, resolution: float | None = None) -> None:
         """Configure for DC current measurement. Valid ranges: 0.01, 0.1, 1, 3."""
         self._configure("CURR:DC", range_amps, resolution)
 
-    def configure_ac_current(self, range_amps: float = 1, resolution: Optional[float] = None):
+    def configure_ac_current(self, range_amps: float = 1, resolution: float | None = None) -> None:
         """Configure for AC current measurement."""
         self._configure("CURR:AC", range_amps, resolution)
 
-    def configure_resistance(self, range_ohms: float = 1000, resolution: Optional[float] = None):
+    def configure_resistance(self, range_ohms: float = 1000, resolution: float | None = None) -> None:
         """Configure for 2-wire resistance measurement. Valid ranges: 100-100M."""
         self._configure("RES", range_ohms, resolution)
 
-    def configure_resistance_4wire(self, range_ohms: float = 1000, resolution: Optional[float] = None):
+    def configure_resistance_4wire(self, range_ohms: float = 1000, resolution: float | None = None) -> None:
         """Configure for 4-wire resistance measurement."""
         self._configure("FRES", range_ohms, resolution)
 
@@ -76,7 +75,7 @@ class HP34401A:
         """Take a reading using current configuration. Returns float."""
         return float(self.adapter.ask("READ?"))
 
-    def measure_voltage(self, ac: bool = False, range_volts: Optional[float] = None) -> float:
+    def measure_voltage(self, ac: bool = False, range_volts: float | None = None) -> float:
         """DC or AC voltage measurement. Returns volts.
 
         Args:
@@ -87,7 +86,7 @@ class HP34401A:
         cmd = f"MEAS:{func}? {range_volts}" if range_volts is not None else f"MEAS:{func}?"
         return float(self.adapter.ask(cmd))
 
-    def measure_current(self, ac: bool = False, range_amps: Optional[float] = None) -> float:
+    def measure_current(self, ac: bool = False, range_amps: float | None = None) -> float:
         """DC or AC current measurement. Returns amperes.
 
         Args:
@@ -98,7 +97,7 @@ class HP34401A:
         cmd = f"MEAS:{func}? {range_amps}" if range_amps is not None else f"MEAS:{func}?"
         return float(self.adapter.ask(cmd))
 
-    def measure_resistance(self, four_wire: bool = False, range_ohms: Optional[float] = None) -> float:
+    def measure_resistance(self, four_wire: bool = False, range_ohms: float | None = None) -> float:
         """2-wire or 4-wire resistance measurement. Returns ohms.
 
         Args:
@@ -109,7 +108,7 @@ class HP34401A:
         cmd = f"MEAS:{func}? {range_ohms}" if range_ohms is not None else f"MEAS:{func}?"
         return float(self.adapter.ask(cmd))
 
-    def measure_frequency(self, range_volts: Optional[float] = None) -> float:
+    def measure_frequency(self, range_volts: float | None = None) -> float:
         """Frequency measurement. Returns Hz.
 
         Args:
@@ -118,9 +117,15 @@ class HP34401A:
         cmd = f"MEAS:FREQ? {range_volts}" if range_volts is not None else "MEAS:FREQ?"
         return float(self.adapter.ask(cmd))
 
-    def check_errors(self):
-        """Query multimeter for errors. Returns error string."""
+    def check_errors(self) -> str:
+        """Query multimeter for errors. Returns error string.
+
+        Error format: '+0,"No error"' indicates no error.
+        Any other response indicates an error condition.
+        """
         error = self.adapter.ask("SYST:ERR?")
-        if not error.startswith("+0"):
+        # Normalize: some instruments return "+0", others return "0"
+        is_error = not (error.startswith("+0") or error.startswith("0,"))
+        if is_error:
             print(f"[DMM] Error: {error}")
         return error

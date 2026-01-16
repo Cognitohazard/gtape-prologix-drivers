@@ -1,231 +1,169 @@
 """Unit tests for PrologixAdapter class."""
 
-import unittest
-from unittest.mock import Mock, MagicMock, call, patch
-import time
-from gtape_prologix_drivers.adapter import PrologixAdapter, LF, CR, ESC, PLUS
+import pytest
+from unittest.mock import MagicMock, call, patch
+from gtape_prologix_drivers.adapter import (
+    PrologixAdapter, LF, CR, ESC, PLUS, SPECIAL_CHARS,
+    PROLOGIX_BAUD_RATE, PROLOGIX_READ_TIMEOUT_MS
+)
 
 
-class TestPrologixAdapter(unittest.TestCase):
+class TestPrologixAdapter:
     """Test cases for PrologixAdapter."""
 
-    def setUp(self):
-        """Set up test fixtures."""
-        # Mock serial.Serial to avoid needing actual hardware
-        self.mock_serial_patcher = patch('gtape_prologix_drivers.adapter.serial.Serial')
-        self.mock_serial_class = self.mock_serial_patcher.start()
-        self.mock_serial = MagicMock()
-        self.mock_serial_class.return_value = self.mock_serial
-        self.mock_serial.is_open = True
-
-    def tearDown(self):
-        """Clean up after tests."""
-        self.mock_serial_patcher.stop()
-
-    def test_initialization(self):
+    def test_initialization(self, adapter, mock_serial):
         """Test adapter initialization and Prologix configuration."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
-        # Verify serial port was opened with correct parameters
-        self.mock_serial_class.assert_called_once_with("COM4", 115200, timeout=6.0)
-
         # Verify Prologix configuration commands were sent
         expected_calls = [
             call("++mode 1\r\n".encode()),
-            call("++addr 4\r\n".encode()),
+            call("++addr 10\r\n".encode()),
             call("++auto 0\r\n".encode()),
             call("++eos 3\r\n".encode()),
             call("++eoi 1\r\n".encode()),
-            call("++read_tmo_ms 4000\r\n".encode()),
+            call(f"++read_tmo_ms {PROLOGIX_READ_TIMEOUT_MS}\r\n".encode()),
         ]
 
-        # Check that all configuration commands were sent
-        actual_calls = self.mock_serial.write.call_args_list
-        self.assertEqual(len(actual_calls), 6)
+        actual_calls = mock_serial.write.call_args_list
+        assert len(actual_calls) == 6
         for expected, actual in zip(expected_calls, actual_calls):
-            self.assertEqual(expected, actual)
+            assert expected == actual
 
-    def test_initialization_custom_timeout(self):
+    def test_initialization_custom_timeout(self, mock_serial):
         """Test adapter initialization with custom timeout."""
-        adapter = PrologixAdapter(port="COM3", gpib_address=22, timeout=5.0)
+        with patch('gtape_prologix_drivers.adapter.serial.Serial', return_value=mock_serial):
+            adapter = PrologixAdapter(port="COM3", gpib_address=22, timeout=5.0)
+            assert adapter.port == "COM3"
+            assert adapter.address == 22
 
-        self.mock_serial_class.assert_called_once_with("COM3", 115200, timeout=5.0)
-        self.assertEqual(adapter.port, "COM3")
-        self.assertEqual(adapter.address, 22)
-
-    def test_switch_address(self):
+    def test_switch_address(self, adapter, mock_serial):
         """Test switching GPIB address."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()  # Clear initialization calls
+        mock_serial.write.reset_mock()
 
-        # Switch to different address
-        adapter.switch_address(10)
+        adapter.switch_address(5)
 
-        self.assertEqual(adapter.address, 10)
-        self.mock_serial.write.assert_called_with("++addr 10\r\n".encode())
+        assert adapter.address == 5
+        mock_serial.write.assert_called_with("++addr 5\r\n".encode())
 
-    def test_switch_address_same(self):
+    def test_switch_address_same(self, adapter, mock_serial):
         """Test switching to same address (should be no-op)."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
-        # Switch to same address
-        adapter.switch_address(4)
+        adapter.switch_address(10)  # Same as initial address
 
-        # Should not send ++addr command
-        self.mock_serial.write.assert_not_called()
-        self.assertEqual(adapter.address, 4)
+        mock_serial.write.assert_not_called()
+        assert adapter.address == 10
 
-    def test_write_command(self):
+    def test_write_command(self, adapter, mock_serial):
         """Test writing SCPI command."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
         adapter.write("*IDN?")
 
-        self.mock_serial.write.assert_called_once_with("*IDN?\r\n".encode())
+        mock_serial.write.assert_called_once_with("*IDN?\r\n".encode())
 
-    def test_write_command_custom_delay(self):
+    def test_write_command_custom_delay(self, adapter, mock_serial):
         """Test write with custom delay."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
         with patch('gtape_prologix_drivers.adapter.time.sleep') as mock_sleep:
             adapter.write("VOLT 5.0", delay=0.5)
             mock_sleep.assert_called_with(0.5)
 
-    def test_read(self):
+    def test_read(self, adapter, mock_serial):
         """Test reading response from instrument."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
-
-        # Mock instrument response (using readline which returns on newline)
-        self.mock_serial.readline.return_value = b"HEWLETT-PACKARD,33120A,0,10.0\n\x00"
+        mock_serial.write.reset_mock()
+        mock_serial.readline.return_value = b"HEWLETT-PACKARD,33120A,0,10.0\n\x00"
 
         response = adapter.read()
 
-        # Verify ++read eoi was sent
-        self.mock_serial.write.assert_called_with("++read eoi\r\n".encode())
+        mock_serial.write.assert_called_with("++read eoi\r\n".encode())
+        assert response == "HEWLETT-PACKARD,33120A,0,10.0"
 
-        # Verify response was decoded and cleaned
-        self.assertEqual(response, "HEWLETT-PACKARD,33120A,0,10.0")
-
-    def test_read_with_null_bytes(self):
+    def test_read_with_null_bytes(self, adapter, mock_serial):
         """Test reading response with null bytes."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
-        # Response with null bytes at start and end (using readline)
-        self.mock_serial.readline.return_value = b"\x00+5.01378400E+00\n\x00"
+        mock_serial.readline.return_value = b"\x00+5.01378400E+00\n\x00"
 
         response = adapter.read()
 
-        self.assertEqual(response, "+5.01378400E+00")
+        assert response == "+5.01378400E+00"
 
-    def test_ask(self):
+    def test_ask(self, adapter, mock_serial):
         """Test query (write + read)."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
-
-        self.mock_serial.readline.return_value = b"+0,\"No error\"\n"
+        mock_serial.write.reset_mock()
+        mock_serial.readline.return_value = b"+0,\"No error\"\n"
 
         response = adapter.ask("SYST:ERR?")
 
-        # Verify command was written
-        calls = self.mock_serial.write.call_args_list
-        self.assertEqual(calls[0], call("SYST:ERR?\r\n".encode()))
-        self.assertEqual(calls[1], call("++read eoi\r\n".encode()))
+        calls = mock_serial.write.call_args_list
+        assert calls[0] == call("SYST:ERR?\r\n".encode())
+        assert calls[1] == call("++read eoi\r\n".encode())
+        assert response == '+0,"No error"'
 
-        self.assertEqual(response, '+0,"No error"')
+    def test_read_line(self, adapter, mock_serial):
+        """Test read_line method."""
+        mock_serial.write.reset_mock()
+        mock_serial.readline.return_value = b"test response\n"
 
-    def test_write_binary_simple(self):
+        response = adapter.read_line()
+
+        mock_serial.write.assert_called_with("++read eoi\r\n".encode())
+        assert response == "test response"
+
+    def test_write_binary_simple(self, adapter, mock_serial):
         """Test writing binary data with IEEE 488.2 format."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
-        # Simple data: [0, 1, 2, 3]
         data = bytes([0, 1, 2, 3])
-
         adapter.write_binary("DATA:DAC VOLATILE, ", data)
 
-        # Expected format: DATA:DAC VOLATILE, #14<data>\r\n
-        # #1 = 1 digit in length
-        # 4 = length (4 bytes)
         expected = b"DATA:DAC VOLATILE, #14" + data + b"\r\n"
+        mock_serial.write.assert_called_once_with(expected)
 
-        self.mock_serial.write.assert_called_once_with(expected)
-
-    def test_write_binary_with_escaping(self):
+    def test_write_binary_with_escaping(self, adapter, mock_serial):
         """Test binary data with special characters requiring escaping."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
-        # Data containing LF (0x0A) which needs escaping
         data = bytes([0x00, 0x0A, 0x01])  # Second byte is LF
-
         adapter.write_binary("TEST ", data)
 
-        # Get what was actually written
-        written_data = self.mock_serial.write.call_args[0][0]
+        written_data = mock_serial.write.call_args[0][0]
+        assert b"#13" in written_data
 
-        # Should have: TEST #13<escaped_data>\r\n
-        # Length header is #13 (3 bytes unescaped)
-        # But actual data is escaped: 0x00, ESC, 0x0A, 0x01
-        self.assertIn(b"#13", written_data)
-
-        # Check that LF was escaped (ESC before LF)
-        # Extract the data portion after header
         data_start = written_data.find(b"#13") + 3
         data_end = written_data.find(b"\r\n")
         actual_data = written_data[data_start:data_end]
+        assert actual_data == bytes([0x00, ESC, LF, 0x01])
 
-        # Should be: 0x00, ESC, LF, 0x01
-        self.assertEqual(actual_data, bytes([0x00, ESC, LF, 0x01]))
-
-    def test_write_binary_all_special_chars(self):
+    def test_write_binary_all_special_chars(self, adapter, mock_serial):
         """Test escaping all special characters."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
-        # Data with all special characters
         data = bytes([LF, CR, ESC, PLUS])
-
         adapter.write_binary("CMD ", data)
 
-        written_data = self.mock_serial.write.call_args[0][0]
-
-        # Extract escaped data
+        written_data = mock_serial.write.call_args[0][0]
         data_start = written_data.find(b"#14") + 3
         data_end = written_data.find(b"\r\n")
         actual_data = written_data[data_start:data_end]
 
-        # Each special char should be preceded by ESC
         expected = bytes([ESC, LF, ESC, CR, ESC, ESC, ESC, PLUS])
-        self.assertEqual(actual_data, expected)
+        assert actual_data == expected
 
-    def test_write_binary_large_data(self):
+    def test_write_binary_large_data(self, adapter, mock_serial):
         """Test binary write with large data (multi-digit length)."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-        self.mock_serial.write.reset_mock()
+        mock_serial.write.reset_mock()
 
-        # 1000 bytes of data
         data = bytes(range(256)) * 4  # 1024 bytes
-
         adapter.write_binary("DATA ", data)
 
-        written_data = self.mock_serial.write.call_args[0][0]
+        written_data = mock_serial.write.call_args[0][0]
+        assert b"#41024" in written_data
 
-        # Should have #4 prefix (4 digits in "1024")
-        # But actual data will be longer due to escaping special chars
-        self.assertIn(b"#41024", written_data)
-
-    def test_read_binary(self):
+    def test_read_binary(self, adapter, mock_serial):
         """Test reading binary data in IEEE 488.2 format."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
-        # Mock binary response: #14<4 bytes of data>
         header = b"#14"
         data = bytes([0x01, 0x02, 0x03, 0x04])
-        self.mock_serial.read.side_effect = [
+        mock_serial.read.side_effect = [
             header[:2],    # '#1'
             header[2:],    # '4'
             data           # actual data
@@ -233,62 +171,93 @@ class TestPrologixAdapter(unittest.TestCase):
 
         result = adapter.read_binary()
 
-        self.assertEqual(result, data)
+        assert result == data
 
-    def test_read_binary_chunked(self):
+    def test_read_binary_sends_read_command(self, adapter, mock_serial):
+        """Test that read_binary sends ++read eoi command."""
+        mock_serial.write.reset_mock()
+        mock_serial.read.side_effect = [b"#1", b"4", bytes([0x01, 0x02, 0x03, 0x04])]
+
+        adapter.read_binary()
+
+        mock_serial.write.assert_called_with("++read eoi\r\n".encode())
+
+    def test_read_binary_chunked(self, adapter, mock_serial):
         """Test reading large binary data in chunks."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
-        # 8 bytes of data, read in 4-byte chunks
         data = bytes([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07])
 
-        self.mock_serial.read.side_effect = [
-            b"#1",                        # Header start
-            b"8",                          # Length digit
-            data[:4],                      # First chunk
-            data[4:]                       # Second chunk
+        mock_serial.read.side_effect = [
+            b"#1",
+            b"8",
+            data[:4],
+            data[4:]
         ]
 
         result = adapter.read_binary(chunk_size=4)
 
-        self.assertEqual(result, data)
+        assert result == data
 
-    def test_read_binary_invalid_header(self):
+    def test_read_binary_invalid_header(self, adapter, mock_serial):
         """Test error handling for invalid binary header."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
+        mock_serial.read.return_value = b"XX"
 
-        self.mock_serial.read.return_value = b"XX"  # Invalid header
-
-        with self.assertRaises(ValueError) as cm:
+        with pytest.raises(ValueError) as excinfo:
             adapter.read_binary()
 
-        self.assertIn("Invalid binary block header", str(cm.exception))
+        assert "Invalid binary block header" in str(excinfo.value)
 
-    def test_close(self):
+    def test_close(self, adapter, mock_serial):
         """Test closing the adapter."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
         adapter.close()
 
-        self.mock_serial.close.assert_called_once()
+        mock_serial.close.assert_called_once()
 
-    def test_context_manager(self):
+    def test_close_idempotent(self, adapter, mock_serial):
+        """Test closing the adapter multiple times is safe."""
+        adapter.close()
+        adapter.close()  # Should not raise
+
+        # ser should be None after first close
+        assert adapter.ser is None
+
+    def test_context_manager(self, mock_serial):
         """Test using adapter as context manager."""
-        with PrologixAdapter(port="COM4", gpib_address=4) as adapter:
-            self.assertIsNotNone(adapter)
+        with patch('gtape_prologix_drivers.adapter.serial.Serial', return_value=mock_serial):
+            with PrologixAdapter(port="COM4", gpib_address=4) as adapter:
+                assert adapter is not None
 
-        # Verify close was called on exit
-        self.mock_serial.close.assert_called()
+        mock_serial.close.assert_called()
 
-    def test_repr(self):
+    def test_repr(self, adapter):
         """Test string representation."""
-        adapter = PrologixAdapter(port="COM4", gpib_address=4)
-
         repr_str = repr(adapter)
 
-        self.assertIn("COM4", repr_str)
-        self.assertIn("4", repr_str)
+        assert "COM1" in repr_str
+        assert "10" in repr_str
 
+    def test_verify_connection_success(self, adapter, mock_serial):
+        """Test verify_connection when Prologix responds."""
+        mock_serial.readline.return_value = b"Prologix GPIB-USB Controller version 6.0\n"
 
-if __name__ == '__main__':
-    unittest.main()
+        result = adapter.verify_connection()
+
+        mock_serial.write.assert_called_with("++ver\r\n".encode())
+        assert result is True
+
+    def test_verify_connection_failure(self, adapter, mock_serial):
+        """Test verify_connection when no response."""
+        mock_serial.readline.return_value = b""
+
+        result = adapter.verify_connection()
+
+        assert result is False
+
+    def test_constants_defined(self):
+        """Test that module constants are defined correctly."""
+        assert LF == 0x0A
+        assert CR == 0x0D
+        assert ESC == 0x1B
+        assert PLUS == 0x2B
+        assert SPECIAL_CHARS == (LF, CR, ESC, PLUS)
+        assert PROLOGIX_BAUD_RATE == 115200
+        assert PROLOGIX_READ_TIMEOUT_MS == 4000

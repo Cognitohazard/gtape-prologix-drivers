@@ -3,11 +3,11 @@
 4 channels, 16-bit data width, 500-15000 point record length.
 """
 
-import time
 import struct
+import time
+
 import numpy as np
 from dataclasses import dataclass
-from typing import List, Dict
 
 
 # Preamble field indices (semicolon-separated from WFMPre?)
@@ -28,7 +28,7 @@ class WaveformData:
     channel: str
     time: np.ndarray
     voltage: np.ndarray
-    preamble: Dict
+    preamble: dict
 
 
 class TDS460A:
@@ -38,7 +38,7 @@ class TDS460A:
         """Initialize TDS460A with adapter."""
         self.adapter = adapter
 
-    def get_active_channels(self):
+    def get_active_channels(self) -> list[str]:
         """Detect which channels (CH1-CH4) are currently displayed. Returns list of names."""
         active_channels = []
         for ch in range(1, 5):
@@ -52,7 +52,7 @@ class TDS460A:
         print(f"[Scope] Active channels: {active_channels}")
         return active_channels
 
-    def set_record_length(self, length):
+    def set_record_length(self, length: int) -> int:
         """Set horizontal record length. Returns actual length set by scope."""
         print(f"[Scope] Setting record length to {length} points...")
         self.adapter.write(f"HORizontal:RECOrdlength {length}")
@@ -67,7 +67,7 @@ class TDS460A:
 
         return actual_length
 
-    def _parse_preamble(self, preamble_str):
+    def _parse_preamble(self, preamble_str: str) -> dict:
         """Parse semicolon-delimited preamble string into dict."""
         fields = preamble_str.split(';')
 
@@ -86,7 +86,7 @@ class TDS460A:
             'yzero': float(fields[PREAMBLE_YZERO])
         }
 
-    def read_waveform(self, channel, record_length=None):
+    def read_waveform(self, channel: str, record_length: int = None) -> WaveformData:
         """Read waveform from channel. Returns WaveformData with time, voltage, and metadata."""
         print(f"[Scope] Reading waveform from {channel}...")
 
@@ -105,34 +105,26 @@ class TDS460A:
         self.adapter.write(f"DATa:STOP {actual_record_length}")
         print(f"[Scope] Configured to transfer all {actual_record_length} points...")
 
-        # Query preamble (text response, use readline)
+        # Query preamble (text response) using adapter's read_line method
         self.adapter.write("WFMPre?")
-        self.adapter.ser.write("++read eoi\r\n".encode())
-        preamble_response = self.adapter.ser.readline().decode().strip(' \t\n\r\x00')
+        preamble_response = self.adapter.read_line()
         preamble = self._parse_preamble(preamble_response)
 
         # Query curve data (binary response)
+        # Note: read_binary now sends ++read eoi internally
         self.adapter.write("CURVe?")
         expected_bytes = preamble['nr_pt'] * 2
-        self.adapter.ser.write("++read eoi\r\n".encode())
         binary_data = self.adapter.read_binary(expected_bytes=expected_bytes)
 
         if len(binary_data) < expected_bytes:
             raise ValueError(f"Incomplete data ({len(binary_data)} of {expected_bytes} bytes)")
 
-        # Convert to voltage and time arrays
+        # Convert to voltage and time arrays using vectorized operations
         num_points = len(binary_data) // 2
-        data_values = struct.unpack('>' + 'h' * num_points, binary_data)
+        data_values = np.array(struct.unpack('>' + 'h' * num_points, binary_data))
 
-        voltage_array = np.array([
-            ((val - preamble['yoff']) * preamble['ymult']) + preamble['yzero']
-            for val in data_values
-        ])
-
-        time_array = np.array([
-            (i - preamble['pt_off']) * preamble['xincr']
-            for i in range(preamble['nr_pt'])
-        ])
+        voltage_array = ((data_values - preamble['yoff']) * preamble['ymult']) + preamble['yzero']
+        time_array = (np.arange(preamble['nr_pt']) - preamble['pt_off']) * preamble['xincr']
 
         print(f"[Scope] Successfully read {len(voltage_array)} points from {channel}")
 
@@ -143,7 +135,7 @@ class TDS460A:
             preamble=preamble
         )
 
-    def check_errors(self):
+    def check_errors(self) -> str:
         """Query scope for errors. Returns error string."""
         error = self.adapter.ask("ALLEV?")
         if error and not error.startswith("0,"):

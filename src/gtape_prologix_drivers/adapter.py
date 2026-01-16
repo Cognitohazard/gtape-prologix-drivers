@@ -36,17 +36,24 @@ Valid Prologix ++ commands (firmware 6.x):
 import serial
 import time
 
+# Prologix controller constants
+PROLOGIX_BAUD_RATE = 115200
+PROLOGIX_READ_TIMEOUT_MS = 4000
+PROLOGIX_ADDRESS_SETTLE_MS = 20
+PROLOGIX_CONFIG_DELAY = 0.1
+
 # Special characters that must be escaped in binary data
-LF   = 0x0A   # Line Feed
-CR   = 0x0D   # Carriage Return
-ESC  = 0x1B   # Escape
-PLUS = 0x2B   # Plus sign
+LF = 0x0A    # Line Feed
+CR = 0x0D    # Carriage Return
+ESC = 0x1B   # Escape
+PLUS = 0x2B  # Plus sign
+SPECIAL_CHARS = (LF, CR, ESC, PLUS)
 
 
 class PrologixAdapter:
     """Adapter for Prologix GPIB-USB controller using pyserial."""
 
-    def __init__(self, port, gpib_address, timeout=6.0, max_retries=3):
+    def __init__(self, port: str, gpib_address: int, timeout: float = 6.0, max_retries: int = 3):
         """Initialize Prologix adapter and configure controller.
 
         Args:
@@ -59,10 +66,10 @@ class PrologixAdapter:
         self.address = gpib_address
         self.timeout = timeout
         self.max_retries = max_retries
-        self.ser = serial.Serial(port, 115200, timeout=timeout)
+        self.ser: serial.Serial | None = serial.Serial(port, PROLOGIX_BAUD_RATE, timeout=timeout)
         self._configure_prologix()
 
-    def _reconnect(self):
+    def _reconnect(self) -> None:
         """Attempt to reconnect to the serial port."""
         try:
             if self.ser and self.ser.is_open:
@@ -70,7 +77,7 @@ class PrologixAdapter:
         except Exception:
             pass
         time.sleep(1.5)
-        self.ser = serial.Serial(self.port, 115200, timeout=self.timeout)
+        self.ser = serial.Serial(self.port, PROLOGIX_BAUD_RATE, timeout=self.timeout)
         self._configure_prologix()
 
     def _with_retry(self, operation, *args, **kwargs):
@@ -90,23 +97,35 @@ class PrologixAdapter:
                         time.sleep(1.0)
         raise last_error
 
-    def _configure_prologix(self):
+    def _configure_prologix(self) -> None:
         """Configure Prologix controller (mode, auto, eos, eoi settings)."""
         config_commands = [
-            "++mode 1",           # Controller mode
+            "++mode 1",                            # Controller mode
             f"++addr {self.address}",
-            "++auto 0",           # Manual read mode (prevents "Query Unterminated")
-            "++eos 3",            # No CR/LF appended
-            "++eoi 1",            # Assert EOI with last byte
-            "++read_tmo_ms 4000", # 4s timeout (max) for slow measurements
+            "++auto 0",                            # Manual read mode (prevents "Query Unterminated")
+            "++eos 3",                             # No CR/LF appended
+            "++eoi 1",                             # Assert EOI with last byte
+            f"++read_tmo_ms {PROLOGIX_READ_TIMEOUT_MS}",  # 4s timeout (max) for slow measurements
         ]
         for cmd in config_commands:
             self.ser.write(f"{cmd}\r\n".encode())
-            time.sleep(0.1)
+            time.sleep(PROLOGIX_CONFIG_DELAY)
         # Flush any responses from config commands
         self.ser.reset_input_buffer()
 
-    def switch_address(self, new_address):
+    def verify_connection(self) -> bool:
+        """Verify Prologix controller is responding.
+
+        Returns True if controller responds correctly.
+        """
+        try:
+            self.ser.write("++ver\r\n".encode())
+            response = self.ser.readline().decode().strip()
+            return "Prologix" in response
+        except Exception:
+            return False
+
+    def switch_address(self, new_address: int) -> None:
         """Switch to a different GPIB address for multi-instrument control.
 
         Uses retry logic to handle transient serial errors. Only updates
@@ -116,38 +135,46 @@ class PrologixAdapter:
             self._with_retry(self._do_switch_address, new_address)
             self.address = new_address  # Only update after successful write
 
-    def _do_switch_address(self, new_address):
+    def _do_switch_address(self, new_address: int) -> None:
         """Internal switch address implementation."""
         self.ser.write(f"++addr {new_address}\r\n".encode())
+        time.sleep(PROLOGIX_ADDRESS_SETTLE_MS / 1000.0)  # 20ms settling time
 
-    def _do_write(self, command, delay=0):
+    def _do_write(self, command: str, delay: float = 0) -> None:
         """Internal write implementation."""
         self.ser.write(f"{command}\r\n".encode())
         time.sleep(delay)
 
-    def _do_read(self):
+    def _do_read(self) -> str:
         """Internal read implementation."""
         self.ser.write("++read eoi\r\n".encode())
-        response = self.ser.readline().decode().strip(' \t\n\r\x00')
-        return response
+        return self.ser.readline().decode().strip(' \t\n\r\x00')
 
-    def write(self, command, delay=0):
+    def write(self, command: str, delay: float = 0) -> None:
         """Send SCPI command to instrument (with auto-reconnect)."""
         return self._with_retry(self._do_write, command, delay)
 
-    def read(self):
+    def read(self) -> str:
         """Read response from instrument (with auto-reconnect).
 
         Blocks until instrument responds or serial timeout (default 6s).
         """
         return self._with_retry(self._do_read)
 
-    def ask(self, command):
+    def read_line(self) -> str:
+        """Read a text line response from instrument (with auto-reconnect).
+
+        Sends ++read eoi and reads one line. Use for text responses where
+        you want retry protection (unlike direct serial access).
+        """
+        return self._with_retry(self._do_read)
+
+    def ask(self, command: str) -> str:
         """Send query command and read response (with auto-reconnect)."""
         self.write(command)
         return self.read()
 
-    def write_binary(self, command, data):
+    def write_binary(self, command: str, data: bytes | list | tuple) -> None:
         """Send binary data with IEEE 488.2 block format (#<N><length><data>).
 
         Special chars (LF, CR, ESC, PLUS) are escaped automatically.
@@ -166,7 +193,7 @@ class PrologixAdapter:
         # Escape special characters
         escaped_data = bytearray()
         for byte in data:
-            if byte in (LF, CR, ESC, PLUS):
+            if byte in SPECIAL_CHARS:
                 escaped_data.append(ESC)
             escaped_data.append(byte)
 
@@ -174,8 +201,12 @@ class PrologixAdapter:
         self.ser.write(full_command)
         time.sleep(0.5)
 
-    def read_binary(self, expected_bytes=None, chunk_size=4096, timeout_override=None):
-        """Read binary data in IEEE 488.2 block format. Returns bytes."""
+    def read_binary(self, expected_bytes: int | None = None, chunk_size: int = 4096,
+                    timeout_override: float | None = None) -> bytes:
+        """Read binary data in IEEE 488.2 block format. Returns bytes.
+
+        Sends ++read eoi to trigger the read, then parses IEEE 488.2 header.
+        """
         old_timeout = self.ser.timeout
 
         if timeout_override:
@@ -186,6 +217,9 @@ class PrologixAdapter:
             self.ser.timeout = min(estimated_time, 120.0)
 
         try:
+            # Trigger the read from the instrument
+            self.ser.write("++read eoi\r\n".encode())
+
             # Parse IEEE 488.2 header: #<N><length>
             header_start = self.ser.read(2)
             if header_start[0:1] != b'#':
@@ -210,10 +244,16 @@ class PrologixAdapter:
         finally:
             self.ser.timeout = old_timeout
 
-    def close(self):
-        """Close serial port."""
-        if self.ser and self.ser.is_open:
-            self.ser.close()
+    def close(self) -> None:
+        """Close serial port. Safe to call multiple times."""
+        if self.ser is not None:
+            try:
+                if self.ser.is_open:
+                    self.ser.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
+            finally:
+                self.ser = None
 
     def __enter__(self):
         """Context manager entry."""
@@ -224,6 +264,6 @@ class PrologixAdapter:
         self.close()
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """String representation."""
         return f"<PrologixAdapter(port='{self.port}', address={self.address})>"
