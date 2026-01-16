@@ -76,12 +76,13 @@ class TestTDS3054:
 
         assert channels == []
 
-    def test_get_active_channels_on_off_format(self, tds3054, mock_adapter):
-        """Test channel display query with ON/OFF format."""
-        mock_adapter.read.side_effect = ["ON", "OFF", "ON", "OFF"]
+    def test_get_active_channels_invalid_response(self, tds3054, mock_adapter):
+        """Test handling of invalid channel responses."""
+        mock_adapter.read.side_effect = ["1", "invalid", "1", ""]
 
         channels = tds3054.get_active_channels()
 
+        # Only valid "1" responses count
         assert channels == ["CH1", "CH3"]
 
     def test_set_channel_display(self, tds3054, mock_adapter):

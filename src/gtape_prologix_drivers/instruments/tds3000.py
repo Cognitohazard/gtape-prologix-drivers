@@ -59,14 +59,17 @@ class TDS3000Base:
         time.sleep(2.0)
 
     def get_active_channels(self) -> list[str]:
-        """Detect which channels are currently displayed."""
+        """Detect which channels are currently displayed.
+
+        Uses SELect:CH<x>? query (same as TDS460A).
+        """
         active_channels = []
         for ch in range(1, self.NUM_CHANNELS + 1):
             channel_name = f"CH{ch}"
-            response = self._ask(f"{channel_name}:DISPlay?")
+            response = self._ask(f"SELect:{channel_name}?")
             try:
-                # Response is "0" or "1", or "ON"/"OFF"
-                if response.strip() in ("1", "ON"):
+                # Response is "0" or "1"
+                if response.strip() == "1":
                     active_channels.append(channel_name)
             except (ValueError, AttributeError):
                 pass
