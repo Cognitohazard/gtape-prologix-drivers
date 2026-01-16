@@ -204,9 +204,8 @@ class TDS3000Base:
         self.adapter.write(f"DATa:STOP {actual_record_length}")
         print(f"[Scope] Configured to transfer {actual_record_length} points...")
 
-        # Query preamble
-        self.adapter.write("WFMOutpre?")
-        preamble_response = self.adapter.read_line()
+        # Query preamble (needs delay for TDS3000)
+        preamble_response = self._ask("WFMOutpre?")
         preamble = self._parse_preamble(preamble_response)
 
         # Query curve data (binary response)
