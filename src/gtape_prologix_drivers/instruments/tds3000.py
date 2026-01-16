@@ -45,6 +45,8 @@ class TDS3000Base:
         """
         if delay is None:
             delay = self.QUERY_DELAY
+        # Flush any stale data in the serial buffer
+        self.adapter.ser.reset_input_buffer()
         self.adapter.write(command)
         time.sleep(delay)
         return self.adapter.read()
@@ -109,7 +111,11 @@ class TDS3000Base:
         self.adapter.write(f"HORizontal:MAIn:SCAle {seconds_per_div}")
 
     def get_sample_rate(self) -> float:
-        """Query current sample rate in samples per second."""
+        """Query current sample rate in samples per second.
+
+        Note: This command may not be supported on all TDS3000 firmware versions.
+        Sample rate can also be calculated from preamble xincr (1/xincr = sample rate).
+        """
         response = self._ask("HORizontal:SAMPLERate?")
         return float(response)
 
@@ -189,9 +195,9 @@ class TDS3000Base:
         """Read waveform from channel. Returns WaveformData with time, voltage, and metadata."""
         print(f"[Scope] Reading waveform from {channel}...")
 
-        # Configure data source and format
+        # Configure data source and format (per TDS3000 reference)
         self.adapter.write(f"DATa:SOUrce {channel}")
-        self.adapter.write("DATa:ENCdg RIBinary")
+        self.adapter.write("DATa:ENCdg BINary")  # TDS3000 uses BINary, not RIBinary
         self.adapter.write("DATa:WIDth 2")
         self.adapter.write("DATa:STARt 1")
 
@@ -204,8 +210,9 @@ class TDS3000Base:
         self.adapter.write(f"DATa:STOP {actual_record_length}")
         print(f"[Scope] Configured to transfer {actual_record_length} points...")
 
-        # Query preamble (needs delay for TDS3000)
-        preamble_response = self._ask("WFMOutpre?")
+        # Query preamble (TDS3000 uses WFMPre?, not WFMOutpre?)
+        preamble_response = self._ask("WFMPre?", delay=0.5)
+        print(f"[Scope] Preamble response ({len(preamble_response)} chars): {preamble_response[:100]}...")
         preamble = self._parse_preamble(preamble_response)
 
         # Query curve data (binary response)

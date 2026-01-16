@@ -221,7 +221,12 @@ class PrologixAdapter:
             self.ser.write("++read eoi\r\n".encode())
 
             # Parse IEEE 488.2 header: #<N><length>
+            # Some instruments send leading null bytes, so skip them
             header_start = self.ser.read(2)
+            while header_start[0:1] == b'\x00':
+                # Shift left and read one more byte
+                header_start = header_start[1:] + self.ser.read(1)
+
             if header_start[0:1] != b'#':
                 raise ValueError(f"Invalid binary block header: {header_start}")
 

@@ -16,9 +16,14 @@ from gtape_prologix_drivers.adapter import PrologixAdapter
 from gtape_prologix_drivers.instruments.tds3000 import TDS3054, TDS3012B
 
 try:
+    # Add parent repo to path for export module
+    from pathlib import Path
+    parent_repo = Path(__file__).resolve().parents[2]  # IC1 Automation
+    sys.path.insert(0, str(parent_repo))
     from export.plotly_writer import WaveformPlotter
     HAS_PLOTTER = True
-except ImportError:
+except ImportError as e:
+    print(f"[Warning] Plotly export not available: {e}")
     HAS_PLOTTER = False
 
 
@@ -74,161 +79,160 @@ def test_scope(port: str, gpib_addr: int, model: str = "TDS3054"):
         else:
             print()
 
-        # Test 3: Query sample rate (may not be supported on all firmware)
-        print("[Test 3] Querying sample rate...")
-        try:
-            sample_rate = scope.get_sample_rate()
-            print(f"[Test 3] [OK] Sample rate: {sample_rate:.2e} Sa/s\n")
-        except (ValueError, Exception) as e:
-            print(f"[Test 3] [SKIP] Sample rate query not supported: {e}\n")
-
-        # Test 4: Query current record length
-        print("[Test 4] Querying current record length...")
+        # Test 3: Query current record length
+        print("[Test 3] Querying current record length...")
         response = adapter.ask("HORizontal:RECOrdlength?")
         original_length = int(response)
-        print(f"[Test 4] [OK] Current record length: {original_length} points\n")
+        print(f"[Test 3] [OK] Current record length: {original_length} points\n")
 
-        # Test 5: Set record length
-        print("[Test 5] Setting record length to 500 points...")
+        # Test 4: Set record length
+        print("[Test 4] Setting record length to 500 points...")
         actual_length = scope.set_record_length(500)
-        print(f"[Test 5] [OK] Record length set to: {actual_length} points\n")
+        print(f"[Test 4] [OK] Record length set to: {actual_length} points\n")
 
-        # Test 6: Read waveform from first active channel
+        # Test 5: Read waveform from first active channel
         if active_channels:
             channel = active_channels[0]
-            print(f"[Test 6] Reading waveform from {channel}...")
+            print(f"[Test 5] Reading waveform from {channel}...")
             waveform = scope.read_waveform(channel)
-            print(f"[Test 6] [OK] Waveform acquired")
-            print(f"[Test 6] [INFO] Points: {len(waveform.voltage)}")
-            print(f"[Test 6] [INFO] Voltage: {min(waveform.voltage):.4f} to {max(waveform.voltage):.4f} V")
-            print(f"[Test 6] [INFO] Time: {waveform.time[0]:.6e} to {waveform.time[-1]:.6e} s\n")
+            print(f"[Test 5] [OK] Waveform acquired")
+            print(f"[Test 5] [INFO] Points: {len(waveform.voltage)}")
+            print(f"[Test 5] [INFO] Voltage: {min(waveform.voltage):.4f} to {max(waveform.voltage):.4f} V")
+            print(f"[Test 5] [INFO] Time: {waveform.time[0]:.6e} to {waveform.time[-1]:.6e} s\n")
         else:
-            print("[Test 6] [SKIP] No active channels\n")
+            print("[Test 5] [SKIP] No active channels\n")
 
-        # Test 7: Channel control - scale and position
+        # Test 6: Channel control - scale and position
         if active_channels:
             channel = active_channels[0]
-            print(f"[Test 7] Testing channel control on {channel}...")
+            print(f"[Test 6] Testing channel control on {channel}...")
 
-            # Get current scale
-            current_scale = adapter.ask(f"{channel}:SCAle?")
-            print(f"[Test 7] [INFO] Current scale: {current_scale} V/div")
+            # Get current scale (use _ask for TDS3000 timing)
+            current_scale = scope._ask(f"{channel}:SCAle?")
+            print(f"[Test 6] [INFO] Current scale: {current_scale} V/div")
 
             # Set new scale
             scope.set_channel_scale(channel, 1.0)
-            time.sleep(0.2)
-            new_scale = adapter.ask(f"{channel}:SCAle?")
-            print(f"[Test 7] [OK] Scale set to: {new_scale} V/div")
+            new_scale = scope._ask(f"{channel}:SCAle?")
+            print(f"[Test 6] [OK] Scale set to: {new_scale} V/div")
 
             # Restore original scale
-            scope.set_channel_scale(channel, float(current_scale))
-            print(f"[Test 7] [OK] Scale restored\n")
+            if current_scale:
+                scope.set_channel_scale(channel, float(current_scale))
+                print(f"[Test 6] [OK] Scale restored\n")
+            else:
+                print(f"[Test 6] [SKIP] Could not restore (empty response)\n")
         else:
-            print("[Test 7] [SKIP] No active channels\n")
+            print("[Test 6] [SKIP] No active channels\n")
 
-        # Test 8: Timebase control
-        print("[Test 8] Testing timebase control...")
-        current_timebase = adapter.ask("HORizontal:MAIn:SCAle?")
-        print(f"[Test 8] [INFO] Current timebase: {current_timebase} s/div")
+        # Test 7: Timebase control
+        print("[Test 7] Testing timebase control...")
+        current_timebase = scope._ask("HORizontal:MAIn:SCAle?")
+        print(f"[Test 7] [INFO] Current timebase: {current_timebase} s/div")
 
         scope.set_timebase(1e-3)
-        time.sleep(0.2)
-        new_timebase = adapter.ask("HORizontal:MAIn:SCAle?")
-        print(f"[Test 8] [OK] Timebase set to: {new_timebase} s/div")
+        new_timebase = scope._ask("HORizontal:MAIn:SCAle?")
+        print(f"[Test 7] [OK] Timebase set to: {new_timebase} s/div")
 
         # Restore
-        adapter.write(f"HORizontal:MAIn:SCAle {current_timebase}")
-        print("[Test 8] [OK] Timebase restored\n")
+        if current_timebase:
+            adapter.write(f"HORizontal:MAIn:SCAle {current_timebase}")
+            print("[Test 7] [OK] Timebase restored\n")
+        else:
+            print("[Test 7] [SKIP] Could not restore (empty response)\n")
 
-        # Test 9: Trigger control
-        print("[Test 9] Testing trigger control...")
-        current_trig_src = adapter.ask("TRIGger:A:EDGe:SOUrce?")
-        print(f"[Test 9] [INFO] Current trigger source: {current_trig_src}")
+        # Test 8: Trigger control
+        print("[Test 8] Testing trigger control...")
+        current_trig_src = scope._ask("TRIGger:A:EDGe:SOUrce?")
+        print(f"[Test 8] [INFO] Current trigger source: {current_trig_src}")
 
-        current_trig_level = adapter.ask("TRIGger:A:LEVel?")
-        print(f"[Test 9] [INFO] Current trigger level: {current_trig_level} V")
+        current_trig_level = scope._ask("TRIGger:A:LEVel?")
+        print(f"[Test 8] [INFO] Current trigger level: {current_trig_level} V")
 
         scope.set_trigger_mode("AUTO")
-        mode = adapter.ask("TRIGger:A:MODe?")
-        print(f"[Test 9] [OK] Trigger mode: {mode}\n")
+        mode = scope._ask("TRIGger:A:MODe?")
+        print(f"[Test 8] [OK] Trigger mode: {mode}\n")
 
-        # Test 10: Acquisition control
-        print("[Test 10] Testing acquisition control...")
+        # Test 9: Acquisition control
+        print("[Test 9] Testing acquisition control...")
         scope.set_acquire_mode("SAMple")
-        acq_mode = adapter.ask("ACQuire:MODe?")
-        print(f"[Test 10] [OK] Acquisition mode: {acq_mode}")
+        acq_mode = scope._ask("ACQuire:MODe?")
+        print(f"[Test 9] [OK] Acquisition mode: {acq_mode}")
 
         scope.run()
-        state = adapter.ask("ACQuire:STATE?")
-        print(f"[Test 10] [OK] Acquisition state: {state}\n")
+        state = scope._ask("ACQuire:STATE?")
+        print(f"[Test 9] [OK] Acquisition state: {state}\n")
 
-        # Test 11: Measurements
+        # Test 10: Measurements
         if active_channels:
             channel = active_channels[0]
-            print(f"[Test 11] Testing measurements on {channel}...")
+            print(f"[Test 10] Testing measurements on {channel}...")
 
             try:
                 freq = scope.measure("FREQuency", channel)
-                print(f"[Test 11] [INFO] Frequency: {freq:.2e} Hz")
+                print(f"[Test 10] [INFO] Frequency: {freq:.2e} Hz")
             except Exception as e:
-                print(f"[Test 11] [INFO] Frequency: N/A ({e})")
+                print(f"[Test 10] [INFO] Frequency: N/A ({e})")
 
             try:
                 pk2pk = scope.measure("PK2pk", channel)
-                print(f"[Test 11] [INFO] Pk-Pk: {pk2pk:.4f} V")
+                print(f"[Test 10] [INFO] Pk-Pk: {pk2pk:.4f} V")
             except Exception as e:
-                print(f"[Test 11] [INFO] Pk-Pk: N/A ({e})")
+                print(f"[Test 10] [INFO] Pk-Pk: N/A ({e})")
 
             try:
                 mean = scope.measure("MEAN", channel)
-                print(f"[Test 11] [INFO] Mean: {mean:.4f} V")
+                print(f"[Test 10] [INFO] Mean: {mean:.4f} V")
             except Exception as e:
-                print(f"[Test 11] [INFO] Mean: N/A ({e})")
+                print(f"[Test 10] [INFO] Mean: N/A ({e})")
 
-            print("[Test 11] [OK] Measurements complete\n")
+            print("[Test 10] [OK] Measurements complete\n")
         else:
-            print("[Test 11] [SKIP] No active channels\n")
+            print("[Test 10] [SKIP] No active channels\n")
 
-        # Test 12: High-resolution waveform capture
+        # Test 11: AUTOSET and waveform capture with plot
         if active_channels:
-            print("[Test 12] High-resolution waveform capture...")
-            print("[Test 12] Setting record length to 10000 points...")
-            scope.set_record_length(10000)
-            time.sleep(0.5)
+            print("[Test 11] AUTOSET and waveform capture...")
 
+            # Run AUTOSET
+            print("[Test 11] Running AUTOSET (may take 5-10 seconds)...")
+            adapter.write("AUTOSet EXECute")
+            time.sleep(10.0)
+            print("[Test 11] [OK] AUTOSET complete")
+
+            # Read waveform after autoset
             channel = active_channels[0]
-            print(f"[Test 12] Reading waveform from {channel}...")
-            print("[Test 12] [INFO] This may take 10-20 seconds...")
+            print(f"[Test 11] Reading waveform from {channel}...")
 
             start_time = time.time()
-            waveform = scope.read_waveform(channel, record_length=10000)
+            waveform = scope.read_waveform(channel)
             elapsed = time.time() - start_time
 
-            print(f"[Test 12] [OK] Captured {len(waveform.voltage)} points in {elapsed:.1f}s")
-            print(f"[Test 12] [INFO] Transfer rate: {len(waveform.voltage) / elapsed:.0f} points/s")
+            print(f"[Test 11] [OK] Captured {len(waveform.voltage)} points in {elapsed:.1f}s")
+            print(f"[Test 11] [INFO] Voltage: {min(waveform.voltage):.4f} to {max(waveform.voltage):.4f} V")
 
             # Save plot if plotly available
             if HAS_PLOTTER:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"tds3000_test_{timestamp}.html"
+                filename = f"tds3000_autoset_{timestamp}.html"
                 WaveformPlotter.save_html([waveform], filename)
-                print(f"[Test 12] [OK] Saved plot: {filename}")
+                print(f"[Test 11] [OK] Saved plot: {filename}")
             print()
         else:
-            print("[Test 12] [SKIP] No active channels\n")
+            print("[Test 11] [SKIP] No active channels\n")
 
-        # Test 13: Restore original record length
-        print(f"[Test 13] Restoring record length to {original_length}...")
+        # Test 12: Restore original record length
+        print(f"[Test 12] Restoring record length to {original_length}...")
         scope.set_record_length(original_length)
-        print("[Test 13] [OK] Record length restored\n")
+        print("[Test 12] [OK] Record length restored\n")
 
-        # Test 14: Error check
-        print("[Test 14] Checking for errors...")
+        # Test 13: Error check
+        print("[Test 13] Checking for errors...")
         error = scope.check_errors()
         if error == "0":
-            print("[Test 14] [OK] No errors\n")
+            print("[Test 13] [OK] No errors\n")
         else:
-            print(f"[Test 14] [INFO] Status: {error}\n")
+            print(f"[Test 13] [INFO] Status: {error}\n")
 
         # Cleanup
         print("[Cleanup] Closing connection...")

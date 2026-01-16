@@ -285,12 +285,12 @@ class TestWaveformReading:
 
         waveform = tds3054.read_waveform('CH1')
 
-        # Verify configuration commands
+        # Verify configuration commands (TDS3000 uses BINary, not RIBinary)
         write_calls = [str(c) for c in mock_adapter.write.call_args_list]
         assert any("DATa:SOUrce CH1" in c for c in write_calls)
-        assert any("DATa:ENCdg RIBinary" in c for c in write_calls)
+        assert any("DATa:ENCdg BINary" in c for c in write_calls)
         assert any("DATa:WIDth 2" in c for c in write_calls)
-        assert any("WFMOutpre?" in c for c in write_calls)
+        assert any("WFMPre?" in c for c in write_calls)
         assert any("CURVe?" in c for c in write_calls)
 
         # Verify result
