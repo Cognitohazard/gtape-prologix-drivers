@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gtape-prologix-drivers"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python drivers for lab instruments via Prologix GPIB-USB controller"
 readme = "README.md"
 license = "MIT"
@@ -19,6 +19,7 @@ keywords = [
     "scpi",
     "hp33120a",
     "tds460a",
+    "tds3000",
     "e3631a",
     "hp34401a",
     "plz164w",
