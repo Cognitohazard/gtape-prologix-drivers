@@ -5,7 +5,6 @@
     <br />
     Completely serial communication based with pyserial
     <br />
-    <br />
     <strong>No NI-VISA required</strong>
     <br />
     <br />
