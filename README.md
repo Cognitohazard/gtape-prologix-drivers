@@ -2,6 +2,7 @@
   <h1 align="center">GTAPE Prologix Drivers</h1>
   <p align="center">
     Python drivers for lab instruments via Prologix GPIB-USB
+    Completely serial communication based with pyserial
     <br />
     <strong>No NI-VISA required</strong>
     <br />
