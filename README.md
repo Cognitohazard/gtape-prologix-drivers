@@ -3,6 +3,8 @@
   <p align="center">
     Python drivers for lab instruments via Prologix GPIB-USB
     <br />
+    Completely serial communication based with pyserial
+    <br />
     <strong>No NI-VISA required</strong>
     <br />
     <br />
