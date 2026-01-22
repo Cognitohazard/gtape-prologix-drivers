@@ -34,7 +34,7 @@ pip install gtape-prologix-drivers
 
 For oscilloscopes and AWG (requires numpy):
 ```bash
-pip install gtape-prologix-drivers[awg]
+pip install gtape-prologix-drivers[all]
 ```
 
 ## Quick Example
