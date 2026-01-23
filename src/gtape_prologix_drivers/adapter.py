@@ -244,6 +244,12 @@ class PrologixAdapter:
                 binary_data.extend(chunk)
                 bytes_remaining -= len(chunk)
 
+            # Consume any trailing terminator (CR/LF) that scope may send after binary data
+            # This prevents stale data from interfering with the next read
+            time.sleep(0.05)  # Brief wait for any trailing bytes to arrive
+            if self.ser.in_waiting:
+                self.ser.read(self.ser.in_waiting)
+
             return bytes(binary_data)
 
         finally:

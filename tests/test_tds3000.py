@@ -279,8 +279,8 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;8;"Ch1";Y;1.0E-6;0;0.0;"s";0.01;0.0;0;"V"'
         binary_data = struct.pack('>8h', 100, 200, 300, 400, 500, 600, 700, 800)
 
-        # _ask uses read(): first for record length query, then for preamble
-        mock_adapter.read.side_effect = ["8", preamble_str]
+        # _ask uses read() for preamble only (no record length query)
+        mock_adapter.read.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         waveform = tds3054.read_waveform('CH1')
@@ -290,6 +290,7 @@ class TestWaveformReading:
         assert any("DATa:SOUrce CH1" in c for c in write_calls)
         assert any("DATa:ENCdg BINary" in c for c in write_calls)
         assert any("DATa:WIDth 2" in c for c in write_calls)
+        assert any("DATa:STARt 1" in c for c in write_calls)
         assert any("WFMPre?" in c for c in write_calls)
         assert any("CURVe?" in c for c in write_calls)
 
@@ -312,8 +313,8 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;4;"Ch1";Y;1.0E-6;0;1.0E-3;"s";0.02;1.5;-100;"V"'
         binary_data = struct.pack('>4h', 100, 200, 300, 400)
 
-        # _ask uses read(): first for record length query, then for preamble
-        mock_adapter.read.side_effect = ["4", preamble_str]
+        # _ask uses read() for preamble only
+        mock_adapter.read.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         waveform = tds3054.read_waveform('CH2')
@@ -331,32 +332,14 @@ class TestWaveformReading:
         preamble_str = '2;16;BIN;RI;MSB;10;"Ch1";Y;1.0E-6;0;0.0;"s";0.01;0.0;0;"V"'
         binary_data = struct.pack('>5h', 100, 200, 300, 400, 500)  # Only 5 of 10 points
 
-        # _ask uses read(): first for record length query, then for preamble
-        mock_adapter.read.side_effect = ["10", preamble_str]
+        # _ask uses read() for preamble only
+        mock_adapter.read.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         with pytest.raises(ValueError) as excinfo:
             tds3054.read_waveform('CH1')
 
         assert "Incomplete data" in str(excinfo.value)
-
-    def test_read_waveform_with_record_length_param(self, tds3054, mock_adapter):
-        """Test reading with explicit record length bypasses query."""
-        preamble_str = '2;16;BIN;RI;MSB;5;"Ch1";Y;1.0E-6;0;0.0;"s";0.01;0.0;0;"V"'
-        binary_data = struct.pack('>5h', 100, 200, 300, 400, 500)
-
-        # With explicit record_length, only preamble query uses read()
-        mock_adapter.read.return_value = preamble_str
-        mock_adapter.read_binary.return_value = binary_data
-
-        waveform = tds3054.read_waveform('CH3', record_length=5)
-
-        # Should not query record length (no RECOrdlength? in write calls)
-        write_calls = [str(c) for c in mock_adapter.write.call_args_list]
-        assert not any("RECOrdlength?" in c for c in write_calls)
-
-        # Should set STOP to specified length
-        assert any("DATa:STOP 5" in c for c in write_calls)
 
 
 class TestMeasurements:

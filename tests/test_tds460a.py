@@ -49,17 +49,18 @@ class TestTDS460A:
 
     def test_set_record_length(self, scope, mock_adapter):
         """Test setting record length."""
-        mock_adapter.ask.return_value = "5000"
+        mock_adapter.read_line.return_value = "5000"
 
         actual_length = scope.set_record_length(5000)
 
-        mock_adapter.write.assert_called_with("HORizontal:RECOrdlength 5000")
-        mock_adapter.ask.assert_called_with("HORizontal:RECOrdlength?")
+        write_calls = [str(call) for call in mock_adapter.write.call_args_list]
+        assert any("HORizontal:RECOrdlength 5000" in call for call in write_calls)
+        assert any("HORizontal:RECOrdlength?" in call for call in write_calls)
         assert actual_length == 5000
 
     def test_set_record_length_large_warning(self, scope, mock_adapter):
         """Test warning for very large record length."""
-        mock_adapter.ask.return_value = "20000"
+        mock_adapter.read_line.return_value = "20000"
 
         with patch('builtins.print') as mock_print:
             actual_length = scope.set_record_length(20000)
@@ -99,8 +100,7 @@ class TestTDS460A:
         preamble_str = '1;0;ASC;RP;BIN;"Ch1";8;Y;s;1.0E-6;0;V;0.01;0;0.0'
         binary_data = struct.pack('>8h', 100, 200, 300, 400, 500, 600, 700, 800)
 
-        mock_adapter.ask.return_value = "8"
-        mock_adapter.read_line.return_value = preamble_str
+        mock_adapter.ask.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         waveform = scope.read_waveform('CH1')
@@ -109,6 +109,7 @@ class TestTDS460A:
         assert any("DATa:SOUrce CH1" in str(call) for call in write_calls)
         assert any("DATa:ENCdg RIBinary" in str(call) for call in write_calls)
         assert any("DATa:WIDth 2" in str(call) for call in write_calls)
+        assert any("DATa:STARt 1" in str(call) for call in write_calls)
 
         assert isinstance(waveform, WaveformData)
         assert waveform.channel == 'CH1'
@@ -127,8 +128,7 @@ class TestTDS460A:
         preamble_str = '1;0;ASC;RP;BIN;"Ch1";4;Y;s;1.0E-6;0;V;0.02;-100;1.5'
         binary_data = struct.pack('>4h', 100, 200, 300, 400)
 
-        mock_adapter.ask.return_value = "4"
-        mock_adapter.read_line.return_value = preamble_str
+        mock_adapter.ask.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         waveform = scope.read_waveform('CH2')
@@ -141,28 +141,13 @@ class TestTDS460A:
         preamble_str = '1;0;ASC;RP;BIN;"Ch1";10;Y;s;1.0E-6;0;V;0.01;0;0.0'
         binary_data = struct.pack('>5h', 100, 200, 300, 400, 500)
 
-        mock_adapter.ask.return_value = "10"
-        mock_adapter.read_line.return_value = preamble_str
+        mock_adapter.ask.return_value = preamble_str
         mock_adapter.read_binary.return_value = binary_data
 
         with pytest.raises(ValueError) as excinfo:
             scope.read_waveform('CH1')
 
         assert "Incomplete data" in str(excinfo.value)
-
-    def test_read_waveform_with_record_length_param(self, scope, mock_adapter):
-        """Test reading waveform with explicit record length parameter."""
-        preamble_str = '1;0;ASC;RP;BIN;"Ch1";5;Y;s;1.0E-6;0;V;0.01;0;0.0'
-        binary_data = struct.pack('>5h', 100, 200, 300, 400, 500)
-
-        mock_adapter.read_line.return_value = preamble_str
-        mock_adapter.read_binary.return_value = binary_data
-
-        waveform = scope.read_waveform('CH3', record_length=5)
-
-        mock_adapter.ask.assert_not_called()
-        write_calls = [str(call) for call in mock_adapter.write.call_args_list]
-        assert any("DATa:STOP 5" in str(call) for call in write_calls)
 
     def test_check_errors_no_error(self, scope, mock_adapter):
         """Test error checking with no errors."""
@@ -201,3 +186,15 @@ class TestTDS460A:
         np.testing.assert_array_equal(waveform.time, time_array)
         np.testing.assert_array_equal(waveform.voltage, voltage_array)
         assert waveform.preamble['nr_pt'] == 3
+
+    def test_stop_acquisition(self, scope, mock_adapter):
+        """Test stopping acquisition (freezing waveform)."""
+        scope.stop_acquisition()
+
+        mock_adapter.write.assert_called_once_with("ACQuire:STATE STOP")
+
+    def test_run_acquisition(self, scope, mock_adapter):
+        """Test resuming acquisition."""
+        scope.run_acquisition()
+
+        mock_adapter.write.assert_called_once_with("ACQuire:STATE RUN")

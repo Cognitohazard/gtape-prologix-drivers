@@ -45,8 +45,6 @@ class TDS3000Base:
         """
         if delay is None:
             delay = self.QUERY_DELAY
-        # Flush any stale data in the serial buffer
-        self.adapter.ser.reset_input_buffer()
         self.adapter.write(command)
         time.sleep(delay)
         return self.adapter.read()
@@ -191,29 +189,20 @@ class TDS3000Base:
             'yunit': fields[15].strip('"'), # Y units (usually "V")
         }
 
-    def read_waveform(self, channel: str, record_length: int = None) -> WaveformData:
+    def read_waveform(self, channel: str) -> WaveformData:
         """Read waveform from channel. Returns WaveformData with time, voltage, and metadata."""
         print(f"[Scope] Reading waveform from {channel}...")
 
-        # Configure data source and format (per TDS3000 reference)
+        # Configure data source and format (DATa:STOP defaults to record length)
         self.adapter.write(f"DATa:SOUrce {channel}")
         self.adapter.write("DATa:ENCdg BINary")  # TDS3000 uses BINary, not RIBinary
         self.adapter.write("DATa:WIDth 2")
         self.adapter.write("DATa:STARt 1")
 
-        if record_length is None:
-            response = self._ask("HORizontal:RECOrdlength?")
-            actual_record_length = int(response)
-        else:
-            actual_record_length = record_length
-
-        self.adapter.write(f"DATa:STOP {actual_record_length}")
-        print(f"[Scope] Configured to transfer {actual_record_length} points...")
-
-        # Query preamble (TDS3000 uses WFMPre?, not WFMOutpre?)
+        # Query preamble (nr_pt tells us actual point count)
         preamble_response = self._ask("WFMPre?", delay=0.5)
-        print(f"[Scope] Preamble response ({len(preamble_response)} chars): {preamble_response[:100]}...")
         preamble = self._parse_preamble(preamble_response)
+        print(f"[Scope] Transferring {preamble['nr_pt']} points from {channel}...")
 
         # Query curve data (binary response)
         self.adapter.write("CURVe?")

@@ -1,6 +1,6 @@
 """TDS460A Digital Oscilloscope driver.
 
-4 channels, 16-bit data width, 500-15000 point record length.
+4 channels, 16-bit data width, 500-15000 point record length (up to 120k with Option 05).
 """
 
 import struct
@@ -56,9 +56,12 @@ class TDS460A:
         """Set horizontal record length. Returns actual length set by scope."""
         print(f"[Scope] Setting record length to {length} points...")
         self.adapter.write(f"HORizontal:RECOrdlength {length}")
-        time.sleep(0.5)
+        time.sleep(2.0)  # Scope needs time to reconfigure acquisition memory
 
-        response = self.adapter.ask("HORizontal:RECOrdlength?")
+        # Query and wait for response (read_line blocks until response arrives)
+        self.adapter.write("HORizontal:RECOrdlength?")
+        response = self.adapter.read_line()
+
         actual_length = int(response)
         print(f"[Scope] Actual record length: {actual_length}")
 
@@ -86,32 +89,22 @@ class TDS460A:
             'yzero': float(fields[PREAMBLE_YZERO])
         }
 
-    def read_waveform(self, channel: str, record_length: int = None) -> WaveformData:
+    def read_waveform(self, channel: str) -> WaveformData:
         """Read waveform from channel. Returns WaveformData with time, voltage, and metadata."""
         print(f"[Scope] Reading waveform from {channel}...")
 
-        # Configure data source and format
+        # Configure data source and format (DATa:STOP defaults to record length)
         self.adapter.write(f"DATa:SOUrce {channel}")
         self.adapter.write("DATa:ENCdg RIBinary")
         self.adapter.write("DATa:WIDth 2")
         self.adapter.write("DATa:STARt 1")
 
-        if record_length is None:
-            response = self.adapter.ask("HORizontal:RECOrdlength?")
-            actual_record_length = int(response)
-        else:
-            actual_record_length = record_length
-
-        self.adapter.write(f"DATa:STOP {actual_record_length}")
-        print(f"[Scope] Configured to transfer all {actual_record_length} points...")
-
-        # Query preamble (text response) using adapter's read_line method
-        self.adapter.write("WFMPre?")
-        preamble_response = self.adapter.read_line()
+        # Query preamble (tells us actual nr_pt)
+        preamble_response = self.adapter.ask("WFMPre?")
         preamble = self._parse_preamble(preamble_response)
+        print(f"[Scope] Transferring {preamble['nr_pt']} points from {channel}...")
 
         # Query curve data (binary response)
-        # Note: read_binary now sends ++read eoi internally
         self.adapter.write("CURVe?")
         expected_bytes = preamble['nr_pt'] * 2
         binary_data = self.adapter.read_binary(expected_bytes=expected_bytes)
@@ -141,3 +134,11 @@ class TDS460A:
         if error and not error.startswith("0,"):
             print(f"[Scope] Error: {error}")
         return error
+
+    def stop_acquisition(self) -> None:
+        """Stop acquisition, freezing the current waveform display."""
+        self.adapter.write("ACQuire:STATE STOP")
+
+    def run_acquisition(self) -> None:
+        """Resume acquisition (live waveform updates)."""
+        self.adapter.write("ACQuire:STATE RUN")

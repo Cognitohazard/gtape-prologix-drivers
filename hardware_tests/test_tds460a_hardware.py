@@ -6,8 +6,12 @@ This script tests the TDS460A scope driver with actual hardware.
 import sys
 import time
 import datetime
+from pathlib import Path
 
-# Add parent directory to path for imports
+# Add IC1 Automation root to path for export module import
+_root = Path(__file__).resolve().parent.parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
 from gtape_prologix_drivers.adapter import PrologixAdapter
 from gtape_prologix_drivers.instruments.tds460a import TDS460A
@@ -98,7 +102,7 @@ def test_scope_basic(port, gpib_addr):
 
         # Test 7: Test different record length
         print("[Test 7] Testing with record length of 1000 points...")
-        scope.set_record_length(1000)
+        actual_length = scope.set_record_length(1000)
         if active_channels:
             waveform = scope.read_waveform(active_channels[0])
             print(f"[Test 7] [OK] Read {len(waveform.voltage)} points at 1000 point record length\n")
@@ -144,26 +148,48 @@ def test_scope_basic(port, gpib_addr):
         else:
             print(f"[Test 12] [INFO] Error status: {error}\n")
 
-        # Test 13: AUTOSET and capture waveform for Plotly visualization
+        # Test 13: Test acquisition stop/run (freeze/unfreeze waveform)
+        print("[Test 13] Testing acquisition stop/run...")
+        print("[Test 13] Stopping acquisition (freezing waveform)...")
+        scope.stop_acquisition()
+        time.sleep(0.5)
+        acq_state = adapter.ask("ACQuire:STATE?")
+        print(f"[Test 13] [INFO] Acquisition state after stop: {acq_state}")
+        if "0" in acq_state or "STOP" in acq_state.upper():
+            print("[Test 13] [OK] Acquisition stopped successfully")
+        else:
+            print(f"[Test 13] [WARNING] Unexpected state: {acq_state}")
+
+        print("[Test 13] Resuming acquisition...")
+        scope.run_acquisition()
+        time.sleep(0.5)
+        acq_state = adapter.ask("ACQuire:STATE?")
+        print(f"[Test 13] [INFO] Acquisition state after run: {acq_state}")
+        if "1" in acq_state or "RUN" in acq_state.upper():
+            print("[Test 13] [OK] Acquisition resumed successfully\n")
+        else:
+            print(f"[Test 13] [WARNING] Unexpected state: {acq_state}\n")
+
+        # Test 14: AUTOSET and capture waveform for Plotly visualization
         if active_channels:
-            print("[Test 13] AUTOSET and waveform capture for visualization...")
+            print("[Test 14] AUTOSET and waveform capture for visualization...")
 
             # Run AUTOSET to optimize scope settings
-            print("[Test 13] Running AUTOSET to auto-configure scope...")
+            print("[Test 14] Running AUTOSET to auto-configure scope...")
             adapter.write("AUTOSet EXECUTE")
             time.sleep(10.0)  # Wait for autoset to complete (can take 5-10 seconds)
-            print("[Test 13] [OK] AUTOSET complete")
+            print("[Test 14] [OK] AUTOSET complete")
 
             # Set record length for maximum detail
-            print("[Test 13] Setting record length to 15000 points for maximum detail...")
+            print("[Test 14] Setting record length to 15000 points for maximum detail...")
             adapter.write("HORizontal:RECOrdlength 15000")
             time.sleep(2.0)  # Give scope time to reconfigure memory after autoset
 
             # Read waveform (pass record_length to avoid querying scope)
             channel = active_channels[0]
-            print(f"[Test 13] Reading waveform from {channel}...")
-            print(f"[Test 13] [INFO] This may take ~30-60 seconds at 9600 baud...")
-            waveform = scope.read_waveform(channel, record_length=15000)
+            print(f"[Test 14] Reading waveform from {channel}...")
+            print(f"[Test 14] [INFO] This may take ~30-60 seconds at 9600 baud...")
+            waveform = scope.read_waveform(channel)
 
             # Generate filename with timestamp
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -171,16 +197,14 @@ def test_scope_basic(port, gpib_addr):
 
             # Create plot (optional, requires plotly)
             if HAS_PLOTTER:
-                print(f"[Test 13] Creating Plotly visualization...")
+                print(f"[Test 14] Creating Plotly visualization...")
                 WaveformPlotter.save_html([waveform], plot_filename)
-                print(f"[Test 13] Saved: {plot_filename}")
+                print(f"[Test 14] [OK] Waveform plot saved to: {plot_filename}")
+                print(f"[Test 14] [INFO] Open {plot_filename} in a web browser to view the plot\n")
             else:
-                print("[Test 13] Skipping plot (plotly not available)")
-
-            print(f"[Test 13] [OK] Waveform plot saved to: {plot_filename}")
-            print(f"[Test 13] [INFO] Open {plot_filename} in a web browser to view the plot\n")
+                print("[Test 14] [SKIP] Plotly not available - install with: pip install plotly\n")
         else:
-            print("[Test 13] [SKIP] No active channels for AUTOSET and waveform capture\n")
+            print("[Test 14] [SKIP] No active channels for AUTOSET and waveform capture\n")
 
         # Cleanup
         print("[Cleanup] Closing connection...")
