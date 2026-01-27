@@ -135,6 +135,18 @@ class TDS460A:
             print(f"[Scope] Error: {error}")
         return error
 
+    # -- Misc --
+
+    def get_id(self) -> str:
+        """Query instrument identification string."""
+        return self.adapter.ask("*IDN?")
+
+    def autoset(self) -> None:
+        """Perform automatic setup (adjusts scales, triggers, etc.)."""
+        self.adapter.write("AUTOSet EXECUTE")
+
+    # -- Acquisition --
+
     def stop_acquisition(self) -> None:
         """Stop acquisition, freezing the current waveform display."""
         self.adapter.write("ACQuire:STATE STOP")
@@ -142,3 +154,205 @@ class TDS460A:
     def run_acquisition(self) -> None:
         """Resume acquisition (live waveform updates)."""
         self.adapter.write("ACQuire:STATE RUN")
+
+    def single_acquisition(self) -> None:
+        """Acquire a single sequence then stop."""
+        self.adapter.write("ACQuire:STOPAfter SEQuence")
+        self.adapter.write("ACQuire:STATE RUN")
+
+    def get_acquisition_state(self) -> str:
+        """Query acquisition state. Returns '0' (stopped) or '1' (running)."""
+        return self.adapter.ask("ACQuire:STATE?")
+
+    def get_acquisition_mode(self) -> str:
+        """Query acquisition mode (SAMple, PEAKdetect, HIRes, AVErage, ENVelope)."""
+        return self.adapter.ask("ACQuire:MODe?")
+
+    def set_acquisition_mode(self, mode: str) -> None:
+        """Set acquisition mode.
+
+        Args:
+            mode: SAMple, PEAKdetect, HIRes, AVErage, or ENVelope
+        """
+        self.adapter.write(f"ACQuire:MODe {mode}")
+
+    def get_num_averages(self) -> int:
+        """Query number of waveforms to average."""
+        return int(self.adapter.ask("ACQuire:NUMAVg?"))
+
+    def set_num_averages(self, count: int) -> None:
+        """Set number of waveforms to average."""
+        self.adapter.write(f"ACQuire:NUMAVg {count}")
+
+    # -- Horizontal --
+
+    def get_horizontal_scale(self) -> float:
+        """Query horizontal time/div in seconds."""
+        return float(self.adapter.ask("HORizontal:MAIn:SCAle?"))
+
+    def set_horizontal_scale(self, scale: float) -> None:
+        """Set horizontal time/div in seconds."""
+        self.adapter.write(f"HORizontal:MAIn:SCAle {scale}")
+
+    def get_record_length(self) -> int:
+        """Query current record length in points."""
+        return int(self.adapter.ask("HORizontal:RECOrdlength?"))
+
+    def get_horizontal_position(self) -> float:
+        """Query horizontal trigger position in percent."""
+        return float(self.adapter.ask("HORizontal:POSition?"))
+
+    def set_horizontal_position(self, position: float) -> None:
+        """Set horizontal trigger position in percent."""
+        self.adapter.write(f"HORizontal:POSition {position}")
+
+    # -- Vertical (per channel) --
+
+    def get_channel_scale(self, channel: str) -> float:
+        """Query volts/div for a channel."""
+        return float(self.adapter.ask(f"{channel}:SCAle?"))
+
+    def set_channel_scale(self, channel: str, scale: float) -> None:
+        """Set volts/div for a channel."""
+        self.adapter.write(f"{channel}:SCAle {scale}")
+
+    def get_channel_offset(self, channel: str) -> float:
+        """Query vertical offset for a channel in volts."""
+        return float(self.adapter.ask(f"{channel}:OFFSet?"))
+
+    def set_channel_offset(self, channel: str, offset: float) -> None:
+        """Set vertical offset for a channel in volts."""
+        self.adapter.write(f"{channel}:OFFSet {offset}")
+
+    def get_channel_coupling(self, channel: str) -> str:
+        """Query coupling for a channel (DC, AC, GND)."""
+        return self.adapter.ask(f"{channel}:COUPling?")
+
+    def set_channel_coupling(self, channel: str, coupling: str) -> None:
+        """Set coupling for a channel (DC, AC, GND)."""
+        self.adapter.write(f"{channel}:COUPling {coupling}")
+
+    def get_channel_bandwidth(self, channel: str) -> str:
+        """Query bandwidth limit for a channel (FULl, TWEnty, etc.)."""
+        return self.adapter.ask(f"{channel}:BANdwidth?")
+
+    def set_channel_bandwidth(self, channel: str, bandwidth: str) -> None:
+        """Set bandwidth limit for a channel.
+
+        Args:
+            channel: CH1-CH4
+            bandwidth: FULl, TWEnty (20MHz), or ONEhundred (100MHz)
+        """
+        self.adapter.write(f"{channel}:BANdwidth {bandwidth}")
+
+    def set_channel_display(self, channel: str, on: bool) -> None:
+        """Turn channel display on or off."""
+        state = "ON" if on else "OFF"
+        self.adapter.write(f"SELect:{channel} {state}")
+
+    # -- Trigger --
+
+    def get_trigger_source(self) -> str:
+        """Query edge trigger source."""
+        return self.adapter.ask("TRIGger:MAIn:EDGE:SOUrce?")
+
+    def set_trigger_source(self, source: str) -> None:
+        """Set edge trigger source (CH1-CH4, EXT, LINE)."""
+        self.adapter.write(f"TRIGger:MAIn:EDGE:SOUrce {source}")
+
+    def get_trigger_level(self) -> float:
+        """Query trigger level in volts."""
+        return float(self.adapter.ask("TRIGger:MAIn:LEVel?"))
+
+    def set_trigger_level(self, level: float) -> None:
+        """Set trigger level in volts."""
+        self.adapter.write(f"TRIGger:MAIn:LEVel {level}")
+
+    def get_trigger_slope(self) -> str:
+        """Query trigger slope (RISe or FALL)."""
+        return self.adapter.ask("TRIGger:MAIn:EDGE:SLOpe?")
+
+    def set_trigger_slope(self, slope: str) -> None:
+        """Set trigger slope (RISe or FALL)."""
+        self.adapter.write(f"TRIGger:MAIn:EDGE:SLOpe {slope}")
+
+    def get_trigger_mode(self) -> str:
+        """Query trigger mode (AUTO or NORMal)."""
+        return self.adapter.ask("TRIGger:MAIn:MODe?")
+
+    def set_trigger_mode(self, mode: str) -> None:
+        """Set trigger mode (AUTO or NORMal)."""
+        self.adapter.write(f"TRIGger:MAIn:MODe {mode}")
+
+    # -- Measurements --
+
+    def measure_immediate(self, channel: str, measurement_type: str) -> float:
+        """Take an immediate measurement on a channel.
+
+        Args:
+            channel: CH1-CH4
+            measurement_type: FREQuency, PERIod, PK2pk, MEAN, MINImum, MAXImum,
+                            AMPlitude, RISe, FALL, PWIdth, NWIdth
+
+        Returns:
+            Measurement value as float.
+        """
+        self.adapter.write(f"MEASUrement:IMMed:SOUrce1 {channel}")
+        self.adapter.write(f"MEASUrement:IMMed:TYPe {measurement_type}")
+        return float(self.adapter.ask("MEASUrement:IMMed:VALue?"))
+
+    def configure_measurement_slot(self, slot: int, channel: str,
+                                   measurement_type: str) -> None:
+        """Configure a persistent measurement slot (1-4).
+
+        Args:
+            slot: Measurement slot number (1-4)
+            channel: CH1-CH4
+            measurement_type: FREQuency, PERIod, PK2pk, MEAN, etc.
+        """
+        self.adapter.write(f"MEASUrement:MEAS{slot}:SOUrce {channel}")
+        self.adapter.write(f"MEASUrement:MEAS{slot}:TYPe {measurement_type}")
+        self.adapter.write(f"MEASUrement:MEAS{slot}:STATE ON")
+
+    def read_measurement_slot(self, slot: int) -> float:
+        """Read the result from a measurement slot.
+
+        Args:
+            slot: Measurement slot number (1-4)
+
+        Returns:
+            Measurement value as float.
+        """
+        return float(self.adapter.ask(f"MEASUrement:MEAS{slot}:VALue?"))
+
+    # -- Cursors --
+
+    def get_cursor_function(self) -> str:
+        """Query current cursor type (HBArs, VBArs, PAIred, OFF)."""
+        return self.adapter.ask("CURSor:FUNCtion?")
+
+    def set_cursor_function(self, function: str) -> None:
+        """Set cursor type.
+
+        Args:
+            function: HBArs (voltage), VBArs (time), PAIred, or OFF
+        """
+        self.adapter.write(f"CURSor:FUNCtion {function}")
+
+    def set_hbar_positions(self, pos1: float, pos2: float) -> None:
+        """Set horizontal bar cursor positions in volts."""
+        self.adapter.write(f"CURSor:HBArs:POSITION1 {pos1}")
+        self.adapter.write(f"CURSor:HBArs:POSITION2 {pos2}")
+
+    def get_hbar_delta(self) -> float:
+        """Query difference between horizontal bar cursors in volts."""
+        return float(self.adapter.ask("CURSor:HBArs:DELTa?"))
+
+    def set_vbar_positions(self, pos1: float, pos2: float) -> None:
+        """Set vertical bar cursor positions in seconds."""
+        self.adapter.write(f"CURSor:VBArs:POSITION1 {pos1}")
+        self.adapter.write(f"CURSor:VBArs:POSITION2 {pos2}")
+
+    def get_vbar_delta(self) -> float:
+        """Query difference between vertical bar cursors in seconds."""
+        return float(self.adapter.ask("CURSor:VBArs:DELTa?"))
