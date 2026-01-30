@@ -88,10 +88,10 @@ class TestTDS3054:
     def test_set_channel_display(self, tds3054, mock_adapter):
         """Test turning channel display on/off."""
         tds3054.set_channel_display("CH1", True)
-        mock_adapter.write.assert_called_with("CH1:DISPlay ON")
+        mock_adapter.write.assert_called_with("SELect:CH1 ON")
 
         tds3054.set_channel_display("CH2", False)
-        mock_adapter.write.assert_called_with("CH2:DISPlay OFF")
+        mock_adapter.write.assert_called_with("SELect:CH2 OFF")
 
     def test_set_channel_scale(self, tds3054, mock_adapter):
         """Test setting channel vertical scale."""
@@ -125,9 +125,9 @@ class TestTDS3054:
         assert any("HORizontal:RECOrdlength?" in c for c in write_calls)
         assert actual == 10000
 
-    def test_set_timebase(self, tds3054, mock_adapter):
+    def test_set_horizontal_scale(self, tds3054, mock_adapter):
         """Test setting horizontal timebase."""
-        tds3054.set_timebase(1e-3)
+        tds3054.set_horizontal_scale(1e-3)
 
         mock_adapter.write.assert_called_with("HORizontal:MAIn:SCAle 0.001")
 
@@ -173,38 +173,6 @@ class TestTDS3054:
         tds3054.force_trigger()
 
         mock_adapter.write.assert_called_with("TRIGger:FORCe")
-
-    def test_run(self, tds3054, mock_adapter):
-        """Test starting acquisition."""
-        tds3054.run()
-
-        mock_adapter.write.assert_called_with("ACQuire:STATE RUN")
-
-    def test_stop(self, tds3054, mock_adapter):
-        """Test stopping acquisition."""
-        tds3054.stop()
-
-        mock_adapter.write.assert_called_with("ACQuire:STATE STOP")
-
-    def test_single(self, tds3054, mock_adapter):
-        """Test single acquisition."""
-        tds3054.single()
-
-        calls = mock_adapter.write.call_args_list
-        assert call("ACQuire:STOPAfter SEQuence") in calls
-        assert call("ACQuire:STATE RUN") in calls
-
-    def test_set_acquire_mode(self, tds3054, mock_adapter):
-        """Test setting acquisition mode."""
-        tds3054.set_acquire_mode("AVErage")
-
-        mock_adapter.write.assert_called_with("ACQuire:MODe AVErage")
-
-    def test_set_average_count(self, tds3054, mock_adapter):
-        """Test setting average count."""
-        tds3054.set_average_count(64)
-
-        mock_adapter.write.assert_called_with("ACQuire:NUMAVg 64")
 
 
 class TestTDS3012B:
@@ -285,10 +253,10 @@ class TestWaveformReading:
 
         waveform = tds3054.read_waveform('CH1')
 
-        # Verify configuration commands (TDS3000 uses BINary, not RIBinary)
+        # Verify configuration commands
         write_calls = [str(c) for c in mock_adapter.write.call_args_list]
         assert any("DATa:SOUrce CH1" in c for c in write_calls)
-        assert any("DATa:ENCdg BINary" in c for c in write_calls)
+        assert any("DATa:ENCdg RIBinary" in c for c in write_calls)
         assert any("DATa:WIDth 2" in c for c in write_calls)
         assert any("DATa:STARt 1" in c for c in write_calls)
         assert any("WFMPre?" in c for c in write_calls)
@@ -345,11 +313,11 @@ class TestWaveformReading:
 class TestMeasurements:
     """Tests for measurement functions."""
 
-    def test_measure_frequency(self, tds3054, mock_adapter):
+    def test_measure_immediate_frequency(self, tds3054, mock_adapter):
         """Test frequency measurement."""
         mock_adapter.read.return_value = "1.0E6"
 
-        result = tds3054.measure("FREQuency", "CH1")
+        result = tds3054.measure_immediate("CH1", "FREQuency")
 
         write_calls = [str(c) for c in mock_adapter.write.call_args_list]
         assert any("MEASUrement:IMMed:SOUrce1 CH1" in c for c in write_calls)
@@ -357,19 +325,19 @@ class TestMeasurements:
         mock_adapter.write.assert_called_with("MEASUrement:IMMed:VALue?")
         assert result == pytest.approx(1.0e6)
 
-    def test_measure_pk2pk(self, tds3054, mock_adapter):
+    def test_measure_immediate_pk2pk(self, tds3054, mock_adapter):
         """Test peak-to-peak measurement."""
         mock_adapter.read.return_value = "3.3"
 
-        result = tds3054.measure("PK2pk", "CH2")
+        result = tds3054.measure_immediate("CH2", "PK2pk")
 
         assert result == pytest.approx(3.3)
 
-    def test_measure_mean(self, tds3054, mock_adapter):
+    def test_measure_immediate_mean(self, tds3054, mock_adapter):
         """Test mean measurement."""
         mock_adapter.read.return_value = "1.65"
 
-        result = tds3054.measure("MEAN", "CH1")
+        result = tds3054.measure_immediate("CH1", "MEAN")
 
         assert result == pytest.approx(1.65)
 
@@ -379,23 +347,20 @@ class TestErrorHandling:
 
     def test_check_errors_no_error(self, tds3054, mock_adapter):
         """Test error check with no errors."""
-        mock_adapter.read.return_value = "0"
+        mock_adapter.read.return_value = "0,No error"
 
         result = tds3054.check_errors()
 
-        mock_adapter.write.assert_called_with("*ESR?")
-        assert result == "0"
+        mock_adapter.write.assert_called_with("ALLEv?")
+        assert result == "0,No error"
 
     def test_check_errors_with_error(self, tds3054, mock_adapter):
         """Test error check when error exists."""
-        mock_adapter.read.return_value = "32"  # Command error bit
+        mock_adapter.read.return_value = "100,Command error"
 
-        with patch('builtins.print') as mock_print:
-            result = tds3054.check_errors()
+        result = tds3054.check_errors()
 
-        assert "32" in result
-        print_calls = [str(c) for c in mock_print.call_args_list]
-        assert any("Error" in c for c in print_calls)
+        assert result == "100,Command error"
 
 
 class TestWaveformDataClass:
@@ -418,3 +383,354 @@ class TestWaveformDataClass:
         np.testing.assert_array_equal(waveform.time, time_array)
         np.testing.assert_array_equal(waveform.voltage, voltage_array)
         assert waveform.preamble['nr_pt'] == 3
+
+
+class TestAcquisitionControl:
+    """Tests for acquisition control methods."""
+
+    def test_run_acquisition(self, tds3054, mock_adapter):
+        """Test run_acquisition command."""
+        tds3054.run_acquisition()
+        mock_adapter.write.assert_called_with("ACQuire:STATE RUN")
+
+    def test_stop_acquisition(self, tds3054, mock_adapter):
+        """Test stop_acquisition command."""
+        tds3054.stop_acquisition()
+        mock_adapter.write.assert_called_with("ACQuire:STATE STOP")
+
+    def test_single_acquisition(self, tds3054, mock_adapter):
+        """Test single_acquisition command."""
+        tds3054.single_acquisition()
+        calls = mock_adapter.write.call_args_list
+        assert call("ACQuire:STOPAfter SEQuence") in calls
+        assert call("ACQuire:STATE RUN") in calls
+
+    def test_get_acquisition_state(self, tds3054, mock_adapter):
+        """Test querying acquisition state."""
+        mock_adapter.read.return_value = "1"
+        result = tds3054.get_acquisition_state()
+        mock_adapter.write.assert_called_with("ACQuire:STATE?")
+        assert result == "1"
+
+    def test_get_acquisition_mode(self, tds3054, mock_adapter):
+        """Test querying acquisition mode."""
+        mock_adapter.read.return_value = "SAMple"
+        result = tds3054.get_acquisition_mode()
+        mock_adapter.write.assert_called_with("ACQuire:MODe?")
+        assert result == "SAMple"
+
+    def test_set_acquisition_mode(self, tds3054, mock_adapter):
+        """Test setting acquisition mode."""
+        tds3054.set_acquisition_mode("AVErage")
+        mock_adapter.write.assert_called_with("ACQuire:MODe AVErage")
+
+    def test_get_num_averages(self, tds3054, mock_adapter):
+        """Test querying number of averages."""
+        mock_adapter.read.return_value = "64"
+        result = tds3054.get_num_averages()
+        assert result == 64
+
+    def test_set_num_averages(self, tds3054, mock_adapter):
+        """Test setting number of averages."""
+        tds3054.set_num_averages(128)
+        mock_adapter.write.assert_called_with("ACQuire:NUMAVg 128")
+
+
+class TestHorizontalSettings:
+    """Tests for horizontal settings methods."""
+
+    def test_get_horizontal_scale(self, tds3054, mock_adapter):
+        """Test querying horizontal scale."""
+        mock_adapter.read.return_value = "1.0E-3"
+        result = tds3054.get_horizontal_scale()
+        mock_adapter.write.assert_called_with("HORizontal:MAIn:SCAle?")
+        assert result == pytest.approx(1e-3)
+
+    def test_set_horizontal_scale(self, tds3054, mock_adapter):
+        """Test setting horizontal scale."""
+        tds3054.set_horizontal_scale(1e-6)
+        mock_adapter.write.assert_called_with("HORizontal:MAIn:SCAle 1e-06")
+
+    def test_get_horizontal_position(self, tds3054, mock_adapter):
+        """Test querying horizontal position."""
+        mock_adapter.read.return_value = "50"
+        result = tds3054.get_horizontal_position()
+        mock_adapter.write.assert_called_with("HORizontal:MAIn:POSition?")
+        assert result == pytest.approx(50.0)
+
+    def test_set_horizontal_position(self, tds3054, mock_adapter):
+        """Test setting horizontal position."""
+        tds3054.set_horizontal_position(25.0)
+        mock_adapter.write.assert_called_with("HORizontal:MAIn:POSition 25.0")
+
+    def test_get_delay_mode(self, tds3054, mock_adapter):
+        """Test querying delay mode."""
+        mock_adapter.read.return_value = "1"
+        result = tds3054.get_delay_mode()
+        mock_adapter.write.assert_called_with("HORizontal:DELay:MODe?")
+        assert result is True
+
+    def test_set_delay_mode(self, tds3054, mock_adapter):
+        """Test setting delay mode."""
+        tds3054.set_delay_mode(True)
+        mock_adapter.write.assert_called_with("HORizontal:DELay:MODe ON")
+
+
+class TestVerticalSettings:
+    """Tests for vertical (channel) settings methods."""
+
+    def test_get_channel_scale(self, tds3054, mock_adapter):
+        """Test querying channel scale."""
+        mock_adapter.read.return_value = "1.0"
+        result = tds3054.get_channel_scale("CH1")
+        mock_adapter.write.assert_called_with("CH1:SCAle?")
+        assert result == pytest.approx(1.0)
+
+    def test_get_channel_offset(self, tds3054, mock_adapter):
+        """Test querying channel offset."""
+        mock_adapter.read.return_value = "0.5"
+        result = tds3054.get_channel_offset("CH1")
+        mock_adapter.write.assert_called_with("CH1:OFFSet?")
+        assert result == pytest.approx(0.5)
+
+    def test_set_channel_offset(self, tds3054, mock_adapter):
+        """Test setting channel offset."""
+        tds3054.set_channel_offset("CH1", 1.0)
+        mock_adapter.write.assert_called_with("CH1:OFFSet 1.0")
+
+    def test_get_channel_coupling(self, tds3054, mock_adapter):
+        """Test querying channel coupling."""
+        mock_adapter.read.return_value = "DC"
+        result = tds3054.get_channel_coupling("CH1")
+        mock_adapter.write.assert_called_with("CH1:COUPling?")
+        assert result == "DC"
+
+    def test_get_channel_bandwidth(self, tds3054, mock_adapter):
+        """Test querying channel bandwidth."""
+        mock_adapter.read.return_value = "FULL"
+        result = tds3054.get_channel_bandwidth("CH1")
+        mock_adapter.write.assert_called_with("CH1:BANdwidth?")
+        assert result == "FULL"
+
+    def test_set_channel_bandwidth(self, tds3054, mock_adapter):
+        """Test setting channel bandwidth."""
+        tds3054.set_channel_bandwidth("CH1", "20E6")
+        mock_adapter.write.assert_called_with("CH1:BANdwidth 20E6")
+
+    def test_get_channel_impedance(self, tds3054, mock_adapter):
+        """Test querying channel impedance."""
+        mock_adapter.read.return_value = "MEG"
+        result = tds3054.get_channel_impedance("CH1")
+        mock_adapter.write.assert_called_with("CH1:IMPedance?")
+        assert result == "MEG"
+
+    def test_set_channel_impedance(self, tds3054, mock_adapter):
+        """Test setting channel impedance."""
+        tds3054.set_channel_impedance("CH1", "FIFty")
+        mock_adapter.write.assert_called_with("CH1:IMPedance FIFty")
+
+    def test_get_channel_invert(self, tds3054, mock_adapter):
+        """Test querying channel invert."""
+        mock_adapter.read.return_value = "0"
+        result = tds3054.get_channel_invert("CH1")
+        mock_adapter.write.assert_called_with("CH1:INVert?")
+        assert result is False
+
+    def test_set_channel_invert(self, tds3054, mock_adapter):
+        """Test setting channel invert."""
+        tds3054.set_channel_invert("CH1", True)
+        mock_adapter.write.assert_called_with("CH1:INVert ON")
+
+
+class TestTriggerSettings:
+    """Tests for trigger settings methods."""
+
+    def test_get_trigger_mode(self, tds3054, mock_adapter):
+        """Test querying trigger mode."""
+        mock_adapter.read.return_value = "AUTO"
+        result = tds3054.get_trigger_mode()
+        mock_adapter.write.assert_called_with("TRIGger:A:MODe?")
+        assert result == "AUTO"
+
+    def test_get_trigger_type(self, tds3054, mock_adapter):
+        """Test querying trigger type."""
+        mock_adapter.read.return_value = "EDGe"
+        result = tds3054.get_trigger_type()
+        mock_adapter.write.assert_called_with("TRIGger:A:TYPe?")
+        assert result == "EDGe"
+
+    def test_set_trigger_type(self, tds3054, mock_adapter):
+        """Test setting trigger type."""
+        tds3054.set_trigger_type("PULSe")
+        mock_adapter.write.assert_called_with("TRIGger:A:TYPe PULSe")
+
+    def test_get_trigger_level(self, tds3054, mock_adapter):
+        """Test querying trigger level."""
+        mock_adapter.read.return_value = "1.5"
+        result = tds3054.get_trigger_level()
+        mock_adapter.write.assert_called_with("TRIGger:A:LEVel?")
+        assert result == pytest.approx(1.5)
+
+    def test_get_trigger_source(self, tds3054, mock_adapter):
+        """Test querying trigger source."""
+        mock_adapter.read.return_value = "CH1"
+        result = tds3054.get_trigger_source()
+        mock_adapter.write.assert_called_with("TRIGger:A:EDGe:SOUrce?")
+        assert result == "CH1"
+
+    def test_get_trigger_slope(self, tds3054, mock_adapter):
+        """Test querying trigger slope."""
+        mock_adapter.read.return_value = "RISe"
+        result = tds3054.get_trigger_slope()
+        mock_adapter.write.assert_called_with("TRIGger:A:EDGe:SLOpe?")
+        assert result == "RISe"
+
+    def test_get_trigger_coupling(self, tds3054, mock_adapter):
+        """Test querying trigger coupling."""
+        mock_adapter.read.return_value = "DC"
+        result = tds3054.get_trigger_coupling()
+        mock_adapter.write.assert_called_with("TRIGger:A:EDGe:COUPling?")
+        assert result == "DC"
+
+    def test_set_trigger_coupling(self, tds3054, mock_adapter):
+        """Test setting trigger coupling."""
+        tds3054.set_trigger_coupling("HFRej")
+        mock_adapter.write.assert_called_with("TRIGger:A:EDGe:COUPling HFRej")
+
+
+class TestMeasurementSlots:
+    """Tests for measurement slot methods."""
+
+    def test_configure_measurement_slot(self, tds3054, mock_adapter):
+        """Test configuring measurement slot."""
+        tds3054.configure_measurement_slot(1, "CH1", "FREQuency")
+        calls = mock_adapter.write.call_args_list
+        assert call("MEASUrement:MEAS1:SOUrce1 CH1") in calls
+        assert call("MEASUrement:MEAS1:TYPe FREQuency") in calls
+        assert call("MEASUrement:MEAS1:STATE ON") in calls
+
+    def test_read_measurement_slot(self, tds3054, mock_adapter):
+        """Test reading measurement slot."""
+        mock_adapter.read.return_value = "1.0E6"
+        result = tds3054.read_measurement_slot(2)
+        mock_adapter.write.assert_called_with("MEASUrement:MEAS2:VALue?")
+        assert result == pytest.approx(1e6)
+
+    def test_disable_measurement_slot(self, tds3054, mock_adapter):
+        """Test disabling measurement slot."""
+        tds3054.disable_measurement_slot(3)
+        mock_adapter.write.assert_called_with("MEASUrement:MEAS3:STATE OFF")
+
+
+class TestCursorMethods:
+    """Tests for cursor methods."""
+
+    def test_get_cursor_function(self, tds3054, mock_adapter):
+        """Test querying cursor function."""
+        mock_adapter.read.return_value = "HBARs"
+        result = tds3054.get_cursor_function()
+        mock_adapter.write.assert_called_with("CURSor:FUNCtion?")
+        assert result == "HBARs"
+
+    def test_set_cursor_function(self, tds3054, mock_adapter):
+        """Test setting cursor function."""
+        tds3054.set_cursor_function("VBARs")
+        mock_adapter.write.assert_called_with("CURSor:FUNCtion VBARs")
+
+    def test_set_hbar_positions(self, tds3054, mock_adapter):
+        """Test setting HBar positions."""
+        tds3054.set_hbar_positions(1.0, 2.0)
+        calls = mock_adapter.write.call_args_list
+        assert call("CURSor:HBARs:POSITION1 1.0") in calls
+        assert call("CURSor:HBARs:POSITION2 2.0") in calls
+
+    def test_get_hbar_delta(self, tds3054, mock_adapter):
+        """Test getting HBar delta."""
+        mock_adapter.read.return_value = "1.5"
+        result = tds3054.get_hbar_delta()
+        mock_adapter.write.assert_called_with("CURSor:HBARs:DELTa?")
+        assert result == pytest.approx(1.5)
+
+    def test_set_vbar_positions(self, tds3054, mock_adapter):
+        """Test setting VBar positions."""
+        tds3054.set_vbar_positions(1e-6, 2e-6)
+        calls = mock_adapter.write.call_args_list
+        assert call("CURSor:VBARs:POSITION1 1e-06") in calls
+        assert call("CURSor:VBARs:POSITION2 2e-06") in calls
+
+    def test_get_vbar_delta(self, tds3054, mock_adapter):
+        """Test getting VBar delta."""
+        mock_adapter.read.return_value = "1.0E-6"
+        result = tds3054.get_vbar_delta()
+        mock_adapter.write.assert_called_with("CURSor:VBARs:DELTa?")
+        assert result == pytest.approx(1e-6)
+
+
+class TestSystemMethods:
+    """Tests for system methods."""
+
+    def test_clear_status(self, tds3054, mock_adapter):
+        """Test clear status command."""
+        tds3054.clear_status()
+        mock_adapter.write.assert_called_with("*CLS")
+
+    def test_get_event_status(self, tds3054, mock_adapter):
+        """Test querying event status register."""
+        mock_adapter.read.return_value = "32"
+        result = tds3054.get_event_status()
+        mock_adapter.write.assert_called_with("*ESR?")
+        assert result == 32
+
+    def test_get_status_byte(self, tds3054, mock_adapter):
+        """Test querying status byte register."""
+        mock_adapter.read.return_value = "64"
+        result = tds3054.get_status_byte()
+        mock_adapter.write.assert_called_with("*STB?")
+        assert result == 64
+
+    def test_operation_complete(self, tds3054, mock_adapter):
+        """Test operation complete command."""
+        tds3054.operation_complete()
+        mock_adapter.write.assert_called_with("*OPC")
+
+    def test_wait(self, tds3054, mock_adapter):
+        """Test wait command."""
+        tds3054.wait()
+        mock_adapter.write.assert_called_with("*WAI")
+
+    def test_is_busy_true(self, tds3054, mock_adapter):
+        """Test busy query when busy."""
+        mock_adapter.read.return_value = "1"
+        result = tds3054.is_busy()
+        mock_adapter.write.assert_called_with("BUSY?")
+        assert result is True
+
+    def test_is_busy_false(self, tds3054, mock_adapter):
+        """Test busy query when idle."""
+        mock_adapter.read.return_value = "0"
+        result = tds3054.is_busy()
+        assert result is False
+
+    def test_initialize(self, tds3054, mock_adapter):
+        """Test initialize command sequence."""
+        mock_adapter.read.return_value = "TEKTRONIX,TDS3054,0,CF:91.1CT"
+        result = tds3054.initialize()
+        calls = mock_adapter.write.call_args_list
+        assert call("*CLS") in calls
+        assert call("HEADer OFF") in calls
+        assert "TDS3054" in result
+
+    def test_autoset(self, tds3054, mock_adapter):
+        """Test autoset command."""
+        tds3054.autoset()
+        mock_adapter.write.assert_called_with("AUTOSet EXECute")
+
+    def test_set_data_start(self, tds3054, mock_adapter):
+        """Test setting data start point."""
+        tds3054.set_data_start(100)
+        mock_adapter.write.assert_called_with("DATa:STARt 100")
+
+    def test_set_data_stop(self, tds3054, mock_adapter):
+        """Test setting data stop point."""
+        tds3054.set_data_stop(5000)
+        mock_adapter.write.assert_called_with("DATa:STOP 5000")
