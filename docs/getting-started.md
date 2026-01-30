@@ -128,13 +128,5 @@ ls /dev/tty.usbserial*
 
 ## Finding GPIB Addresses
 
-Each instrument has a GPIB address (0-30) set via its front panel or rear switches. Common defaults:
-
-| Instrument | Typical Address |
-|------------|-----------------|
-| HP34401A | 22 |
-| E3631A | 5 |
-| PLZ164W | 1 or 10 |
-| TDS scopes | 1 |
-
+Each instrument has a GPIB address (0-30) set via its front panel.
 Consult your instrument's manual to find or change its GPIB address.
