@@ -22,7 +22,7 @@ from .instruments import (
 )
 from .instruments.tds460a import WaveformData
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "PrologixAdapter",
     "HP33120A",

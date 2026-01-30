@@ -7,12 +7,12 @@
 pip install gtape-prologix-drivers
 
 # With numpy support (required for oscilloscopes and AWG)
-pip install gtape-prologix-drivers[awg]
+pip install gtape-prologix-drivers[all]
 
 # For development
 git clone https://github.com/Cognitohazard/gtape-prologix-drivers.git
 cd gtape-prologix-drivers
-pip install -e ".[dev,awg]"
+pip install -e ".[dev,all]"
 ```
 
 ## Basic Usage

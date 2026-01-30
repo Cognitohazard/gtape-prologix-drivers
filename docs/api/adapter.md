@@ -11,7 +11,7 @@ from gtape_prologix_drivers import PrologixAdapter
 ## Constructor
 
 ```python
-PrologixAdapter(port, gpib_address, timeout=6.0)
+PrologixAdapter(port, gpib_address, timeout=6.0, max_retries=3)
 ```
 
 | Parameter | Type | Description |
@@ -19,6 +19,7 @@ PrologixAdapter(port, gpib_address, timeout=6.0)
 | `port` | str | Serial port (e.g., "COM4", "/dev/ttyUSB0") |
 | `gpib_address` | int | Initial GPIB address (0-30) |
 | `timeout` | float | Read timeout in seconds (default: 6.0) |
+| `max_retries` | int | Reconnection attempts on serial errors (default: 3) |
 
 ## Methods
 
@@ -129,6 +130,59 @@ Read binary data in IEEE 488.2 block format (`#<n><length><data>`).
 adapter.write("CURV?")  # Request waveform data
 data = adapter.read_binary(expected_bytes=10000)
 ```
+
+---
+
+### verify_connection
+
+```python
+adapter.verify_connection() -> bool
+```
+
+Verify Prologix controller is responding.
+
+**Returns:** True if controller responds correctly
+
+**Example:**
+```python
+if not adapter.verify_connection():
+    print("Prologix controller not responding!")
+```
+
+---
+
+### write_binary
+
+```python
+adapter.write_binary(command: str, data: bytes | list | tuple) -> None
+```
+
+Send binary data with IEEE 488.2 block format (#<N><length><data>).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `command` | str | SCPI command prefix |
+| `data` | bytes \| list \| tuple | Binary data to send |
+
+Special characters (LF, CR, ESC, PLUS) are escaped automatically.
+
+**Example:**
+```python
+# Upload waveform data to AWG
+adapter.write_binary("DATA:DAC VOLATILE, ", waveform_bytes)
+```
+
+---
+
+### read_line
+
+```python
+adapter.read_line() -> str
+```
+
+Read a text line response with retry protection. Identical to `read()` but explicitly for line-based text responses.
+
+**Returns:** Response string (stripped of whitespace)
 
 ---
 
