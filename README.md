@@ -28,6 +28,8 @@
 
 ## Installation
 
+### From PyPI (stable releases)
+
 ```bash
 pip install gtape-prologix-drivers
 ```
@@ -35,6 +37,41 @@ pip install gtape-prologix-drivers
 For oscilloscopes and AWG (requires numpy):
 ```bash
 pip install gtape-prologix-drivers[all]
+```
+
+### From Git (latest development version)
+
+For the newest features that may not be released yet:
+
+**Using pip:**
+```bash
+pip install git+https://github.com/gtape/gtape-prologix-drivers.git
+```
+
+**Using uv:**
+```bash
+uv pip install git+https://github.com/gtape/gtape-prologix-drivers.git
+```
+
+Or add to your `pyproject.toml`:
+```toml
+[tool.uv.sources]
+gtape-prologix-drivers = { git = "https://github.com/gtape/gtape-prologix-drivers.git" }
+```
+
+### Editable Install (for development)
+
+Clone the repo and install in editable mode:
+
+```bash
+git clone https://github.com/gtape/gtape-prologix-drivers.git
+cd gtape-prologix-drivers
+
+# Using pip
+pip install -e .
+
+# Using uv
+uv pip install -e .
 ```
 
 ## Quick Example

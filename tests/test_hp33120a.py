@@ -51,6 +51,20 @@ class TestHP33120AConstants:
         assert HP33120A.SWEEP_LINEAR == "LIN"
         assert HP33120A.SWEEP_LOGARITHMIC == "LOG"
 
+    def test_byte_order_constants(self):
+        """Byte order constants."""
+        assert HP33120A.BYTE_ORDER_NORMAL == "NORM"
+        assert HP33120A.BYTE_ORDER_SWAPPED == "SWAP"
+
+    def test_validation_constants(self):
+        """Validation limit constants."""
+        assert HP33120A.AM_DEPTH_MIN == 0
+        assert HP33120A.AM_DEPTH_MAX == 120
+        assert HP33120A.DUTY_CYCLE_MIN == 20
+        assert HP33120A.DUTY_CYCLE_MAX == 80
+        assert HP33120A.BURST_PHASE_MIN == -360
+        assert HP33120A.BURST_PHASE_MAX == 360
+
 
 class TestHP33120AInit:
     """Test initialization."""
@@ -114,9 +128,17 @@ class TestHP33120ASystemMethods:
         awg.adapter.write.assert_any_call("*RCL 1")
 
     def test_delete_state(self, awg):
-        """delete_state sends MEM:STAT:DEL command."""
+        """delete_state sends MEM:STAT:DEL command and waits."""
+        awg.adapter.ask.return_value = "1"  # For *OPC?
         awg.delete_state(3)
         awg.adapter.write.assert_called_with("MEM:STAT:DEL 3")
+        # Verify *OPC? was called to wait for completion
+        awg.adapter.ask.assert_called_with("*OPC?")
+
+    def test_delete_state_invalid_location(self, awg):
+        """delete_state rejects invalid locations."""
+        with pytest.raises(ValueError, match="0-3"):
+            awg.delete_state(5)
 
     def test_check_errors_no_error(self, awg):
         """check_errors returns error string."""
@@ -264,6 +286,26 @@ class TestHP33120AOutputParameters:
         awg.adapter.ask.return_value = "1"
         result = awg.get_sync_output()
         assert result is True
+
+    def test_set_byte_order(self, awg):
+        """set_byte_order sends FORM:BORD command."""
+        awg.adapter.ask.return_value = "+0,\"No error\""
+        awg.set_byte_order(HP33120A.BYTE_ORDER_NORMAL)
+        awg.adapter.write.assert_called_with("FORM:BORD NORM")
+
+    def test_get_byte_order(self, awg):
+        """get_byte_order queries byte order."""
+        awg.adapter.ask.return_value = "NORM"
+        result = awg.get_byte_order()
+        awg.adapter.ask.assert_called_with("FORM:BORD?")
+        assert result == "NORM"
+
+    def test_set_duty_cycle_validation(self, awg):
+        """set_duty_cycle validates range 20-80%."""
+        with pytest.raises(ValueError, match="20-80%"):
+            awg.set_duty_cycle(10)
+        with pytest.raises(ValueError, match="20-80%"):
+            awg.set_duty_cycle(90)
 
 
 class TestHP33120AApplyMethods:
@@ -455,6 +497,45 @@ class TestHP33120AWaveformUpload:
         awg.delete_all_waveforms()
         awg.adapter.write.assert_any_call("DATA:DEL:ALL")
 
+    def test_get_waveform_average(self, awg):
+        """get_waveform_average queries DATA:ATTR:AVER?."""
+        awg.adapter.ask.return_value = "0.5"
+        result = awg.get_waveform_average()
+        awg.adapter.ask.assert_called_with("DATA:ATTR:AVER?")
+        assert result == 0.5
+
+    def test_get_waveform_average_named(self, awg):
+        """get_waveform_average can query named waveform."""
+        awg.adapter.ask.return_value = "0.25"
+        result = awg.get_waveform_average("MYWAVE")
+        awg.adapter.ask.assert_called_with("DATA:ATTR:AVER? MYWAVE")
+        assert result == 0.25
+
+    def test_get_waveform_crest_factor(self, awg):
+        """get_waveform_crest_factor queries DATA:ATTR:CFAC?."""
+        awg.adapter.ask.return_value = "1.414"
+        result = awg.get_waveform_crest_factor()
+        awg.adapter.ask.assert_called_with("DATA:ATTR:CFAC?")
+        assert result == pytest.approx(1.414)
+
+    def test_get_waveform_ptp(self, awg):
+        """get_waveform_ptp queries DATA:ATTR:PTP?."""
+        awg.adapter.ask.return_value = "4094"
+        result = awg.get_waveform_ptp()
+        awg.adapter.ask.assert_called_with("DATA:ATTR:PTP?")
+        assert result == 4094
+
+    def test_upload_waveform_dac_sets_byte_order(self, awg):
+        """upload_waveform_dac sets byte order to NORMAL before upload."""
+        awg.adapter.ask.return_value = "+0,\"No error\""
+        waveform = np.array([-2047, 0, 2047, 0, -2047, 0, 2047, 0], dtype=np.int16)
+        awg.upload_waveform_dac(waveform)
+        # Should have FORM:BORD NORM call before DATA:DAC
+        write_calls = [str(c) for c in awg.adapter.write.call_args_list]
+        bord_idx = next(i for i, c in enumerate(write_calls) if "FORM:BORD NORM" in c)
+        # write_binary is called separately, so just verify FORM:BORD was called
+        assert any("FORM:BORD NORM" in c for c in write_calls)
+
 
 class TestHP33120AModulationAM:
     """Test AM modulation methods."""
@@ -519,6 +600,13 @@ class TestHP33120AModulationAM:
         awg.adapter.ask.return_value = "1"
         result = awg.get_am_state()
         assert result is True
+
+    def test_set_am_depth_validation(self, awg):
+        """set_am_depth validates range 0-120%."""
+        with pytest.raises(ValueError, match="0-120%"):
+            awg.set_am_depth(-10)
+        with pytest.raises(ValueError, match="0-120%"):
+            awg.set_am_depth(130)
 
 
 class TestHP33120AModulationFM:
@@ -605,6 +693,13 @@ class TestHP33120AModulationBurst:
         awg.adapter.ask.return_value = "+0,\"No error\""
         awg.set_burst_state(True)
         awg.adapter.write.assert_called_with("BM:STAT ON")
+
+    def test_set_burst_phase_validation(self, awg):
+        """set_burst_phase validates range -360 to +360 degrees."""
+        with pytest.raises(ValueError, match="-360 to 360"):
+            awg.set_burst_phase(-400)
+        with pytest.raises(ValueError, match="-360 to 360"):
+            awg.set_burst_phase(400)
 
 
 class TestHP33120AFSK:
@@ -724,10 +819,16 @@ class TestHP33120ALegacyMethods:
     """Test legacy/deprecated methods for backwards compatibility."""
 
     def test_upload_waveform_legacy(self, awg):
-        """Legacy upload_waveform still works."""
+        """Legacy upload_waveform still works but emits deprecation warning."""
+        import warnings
         awg.adapter.ask.return_value = "+0,\"No error\""
         waveform = np.linspace(-2047, 2047, 10, dtype=np.int16)
-        awg.upload_waveform(waveform, name="TEST")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            awg.upload_waveform(waveform, name="TEST")
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
         awg.adapter.write_binary.assert_called_once()
 
     def test_select_waveform_legacy(self, awg):

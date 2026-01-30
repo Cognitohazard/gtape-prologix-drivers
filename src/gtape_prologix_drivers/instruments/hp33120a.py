@@ -4,6 +4,7 @@
 """
 
 import array
+import warnings
 import numpy as np
 
 
@@ -54,6 +55,18 @@ class HP33120A:
     # Sweep spacing constants
     SWEEP_LINEAR = "LIN"
     SWEEP_LOGARITHMIC = "LOG"
+
+    # Byte order constants (for binary waveform transfer)
+    BYTE_ORDER_NORMAL = "NORM"  # MSB first (big-endian)
+    BYTE_ORDER_SWAPPED = "SWAP"  # LSB first (little-endian)
+
+    # Validation limits
+    AM_DEPTH_MIN = 0
+    AM_DEPTH_MAX = 120
+    DUTY_CYCLE_MIN = 20
+    DUTY_CYCLE_MAX = 80
+    BURST_PHASE_MIN = -360
+    BURST_PHASE_MAX = 360
 
     def __init__(self, adapter):
         """Initialize HP33120A with adapter."""
@@ -124,6 +137,7 @@ class HP33120A:
         if location < 0 or location > 3:
             raise ValueError(f"State location must be 0-3, got {location}")
         self.adapter.write(f"MEM:STAT:DEL {location}")
+        self._wait_for_complete()
 
     def check_errors(self) -> str:
         """Query AWG for errors. Returns error string."""
@@ -212,6 +226,8 @@ class HP33120A:
 
     def set_duty_cycle(self, percent: float) -> None:
         """Set duty cycle for square waves (20-80%, frequency dependent)."""
+        if percent < self.DUTY_CYCLE_MIN or percent > self.DUTY_CYCLE_MAX:
+            raise ValueError(f"Duty cycle must be {self.DUTY_CYCLE_MIN}-{self.DUTY_CYCLE_MAX}%, got {percent}%")
         self.adapter.write(f"PULS:DCYC {percent}")
         self.check_errors()
 
@@ -227,6 +243,15 @@ class HP33120A:
     def get_sync_output(self) -> bool:
         """Query SYNC output state."""
         return self._query_bool("OUTP:SYNC?")
+
+    def set_byte_order(self, order: str) -> None:
+        """Set byte order for binary waveform transfer (BYTE_ORDER_NORMAL or BYTE_ORDER_SWAPPED)."""
+        self.adapter.write(f"FORM:BORD {order}")
+        self.check_errors()
+
+    def get_byte_order(self) -> str:
+        """Query byte order setting for binary waveform transfer."""
+        return self._query_string("FORM:BORD?")
 
     # --- APPLy Methods (Standard Waveforms) ---
 
@@ -299,6 +324,9 @@ class HP33120A:
 
         if np.any(data < self.DAC_MIN) or np.any(data > self.DAC_MAX):
             raise ValueError(f"Waveform values must be in range {self.DAC_MIN} to {self.DAC_MAX}")
+
+        # Ensure byte order is set to NORMAL (MSB first / big-endian)
+        self.set_byte_order(self.BYTE_ORDER_NORMAL)
 
         # Convert to byte array with MSB-first byte order (big-endian)
         data_array = array.array('h', data)  # 'h' = signed short
@@ -376,6 +404,24 @@ class HP33120A:
             return int(self._query_float(f"DATA:ATTR:POIN? {name}"))
         return int(self._query_float("DATA:ATTR:POIN?"))
 
+    def get_waveform_average(self, name: str | None = None) -> float:
+        """Query average value of a waveform. If name is None, queries volatile."""
+        if name:
+            return self._query_float(f"DATA:ATTR:AVER? {name}")
+        return self._query_float("DATA:ATTR:AVER?")
+
+    def get_waveform_crest_factor(self, name: str | None = None) -> float:
+        """Query crest factor of a waveform. If name is None, queries volatile."""
+        if name:
+            return self._query_float(f"DATA:ATTR:CFAC? {name}")
+        return self._query_float("DATA:ATTR:CFAC?")
+
+    def get_waveform_ptp(self, name: str | None = None) -> float:
+        """Query peak-to-peak value of a waveform. If name is None, queries volatile."""
+        if name:
+            return self._query_float(f"DATA:ATTR:PTP? {name}")
+        return self._query_float("DATA:ATTR:PTP?")
+
     def delete_waveform(self, name: str) -> None:
         """Delete a user-defined waveform from non-volatile memory."""
         self.adapter.write(f"DATA:DEL {name}")
@@ -398,6 +444,13 @@ class HP33120A:
         Note: This method now expects signed values (-2047 to +2047) per the
         HP33120A specification. Legacy code using 0-2047 range should be updated.
         """
+        warnings.warn(
+            "upload_waveform() is deprecated and now expects signed values (-2047 to +2047). "
+            "Use upload_waveform_dac() for signed integers or upload_waveform_float() for "
+            "normalized floats (-1.0 to +1.0).",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.upload_waveform_dac(waveform_data, name=name)
 
     def select_waveform(self, name: str = "PULSE") -> None:
@@ -440,6 +493,8 @@ class HP33120A:
 
     def set_am_depth(self, percent: float) -> None:
         """Set AM modulation depth (0-120%)."""
+        if percent < self.AM_DEPTH_MIN or percent > self.AM_DEPTH_MAX:
+            raise ValueError(f"AM depth must be {self.AM_DEPTH_MIN}-{self.AM_DEPTH_MAX}%, got {percent}%")
         self.adapter.write(f"AM:DEPT {percent}")
         self.check_errors()
 
@@ -533,7 +588,9 @@ class HP33120A:
         return self._query_string("BM:NCYC?")
 
     def set_burst_phase(self, degrees: float) -> None:
-        """Set burst starting phase in degrees."""
+        """Set burst starting phase in degrees (-360 to +360)."""
+        if degrees < self.BURST_PHASE_MIN or degrees > self.BURST_PHASE_MAX:
+            raise ValueError(f"Burst phase must be {self.BURST_PHASE_MIN} to {self.BURST_PHASE_MAX} degrees, got {degrees}")
         self.adapter.write(f"BM:PHAS {degrees}")
         self.check_errors()
 
