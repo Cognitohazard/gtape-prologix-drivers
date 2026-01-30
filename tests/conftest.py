@@ -58,3 +58,10 @@ def load(mock_adapter):
     """Create PLZ164W load with mock adapter."""
     from gtape_prologix_drivers.instruments.plz164w import PLZ164W
     return PLZ164W(mock_adapter)
+
+
+@pytest.fixture
+def awg(mock_adapter):
+    """Create HP33120A AWG with mock adapter."""
+    from gtape_prologix_drivers.instruments.hp33120a import HP33120A
+    return HP33120A(mock_adapter)
