@@ -218,7 +218,7 @@ class TestPreambleParsing:
         assert preamble['bn_fmt'] == 'RI'
         assert preamble['byt_or'] == 'MSB'
         assert preamble['nr_pt'] == 10000
-        assert preamble['wfid'] == 'Ch1, DC coupling, 2.0V/div'
+        assert preamble['description'] == 'Ch1, DC coupling, 2.0V/div'
         assert preamble['pt_fmt'] == 'Y'
         assert preamble['xincr'] == pytest.approx(1.0e-6)
         assert preamble['pt_off'] == 0.0

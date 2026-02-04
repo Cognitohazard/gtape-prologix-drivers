@@ -225,14 +225,27 @@ class PrologixAdapter:
             header_start = self.ser.read(2)
             while header_start[0:1] == b'\x00':
                 # Shift left and read one more byte
-                header_start = header_start[1:] + self.ser.read(1)
+                next_byte = self.ser.read(1)
+                if len(next_byte) == 0:
+                    raise TimeoutError("Timeout reading binary header (only null bytes received)")
+                header_start = header_start[1:] + next_byte
+
+            if len(header_start) < 2:
+                raise TimeoutError(f"Timeout reading binary header (got {len(header_start)} bytes)")
 
             if header_start[0:1] != b'#':
-                raise ValueError(f"Invalid binary block header: {header_start}")
+                raise ValueError(f"Invalid binary block header: {header_start!r}")
 
             n = int(chr(header_start[1]))
-            length_str = self.ser.read(n).decode()
-            length = int(length_str)
+            if n == 0:
+                raise ValueError("Invalid IEEE 488.2 header: digit count is 0")
+
+            length_bytes = self.ser.read(n)
+            if len(length_bytes) < n:
+                raise TimeoutError(
+                    f"Timeout reading length field (got {len(length_bytes)}/{n} bytes)"
+                )
+            length = int(length_bytes.decode())
 
             # Read data continuously (no delays - data is streaming)
             binary_data = bytearray()
@@ -240,7 +253,9 @@ class PrologixAdapter:
             while bytes_remaining > 0:
                 chunk = self.ser.read(min(chunk_size, bytes_remaining))
                 if len(chunk) == 0:
-                    break
+                    raise TimeoutError(
+                        f"Timeout reading binary data (got {len(binary_data)}/{length} bytes)"
+                    )
                 binary_data.extend(chunk)
                 bytes_remaining -= len(chunk)
 

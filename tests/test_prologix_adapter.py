@@ -206,6 +206,65 @@ class TestPrologixAdapter:
 
         assert "Invalid binary block header" in str(excinfo.value)
 
+    def test_read_binary_timeout_partial_header(self, adapter, mock_serial):
+        """Test timeout error when header read is incomplete."""
+        mock_serial.read.return_value = b"#"  # Only 1 byte instead of 2
+
+        with pytest.raises(TimeoutError) as excinfo:
+            adapter.read_binary()
+
+        assert "Timeout reading binary header" in str(excinfo.value)
+
+    def test_read_binary_timeout_partial_length(self, adapter, mock_serial):
+        """Test timeout error when length field read is incomplete."""
+        mock_serial.read.side_effect = [
+            b"#3",     # Header says 3-digit length
+            b"10",     # Only 2 bytes instead of 3
+        ]
+
+        with pytest.raises(TimeoutError) as excinfo:
+            adapter.read_binary()
+
+        assert "Timeout reading length field" in str(excinfo.value)
+
+    def test_read_binary_timeout_partial_data(self, adapter, mock_serial):
+        """Test timeout error when data read is incomplete."""
+        mock_serial.read.side_effect = [
+            b"#1",     # Header
+            b"8",      # 8 bytes expected
+            b"\x01\x02\x03\x04",  # First chunk (4 bytes)
+            b"",       # Timeout - empty read
+        ]
+
+        with pytest.raises(TimeoutError) as excinfo:
+            adapter.read_binary(chunk_size=4)
+
+        assert "Timeout reading binary data" in str(excinfo.value)
+        assert "4/8 bytes" in str(excinfo.value)
+
+    def test_read_binary_leading_null_bytes(self, adapter, mock_serial):
+        """Test that leading null bytes are skipped correctly."""
+        data = bytes([0x01, 0x02, 0x03, 0x04])
+        mock_serial.read.side_effect = [
+            b"\x00#",  # Null byte followed by #
+            b"1",      # Read next byte to get digit
+            b"4",      # Length
+            data,
+        ]
+
+        result = adapter.read_binary()
+
+        assert result == data
+
+    def test_read_binary_digit_count_zero_error(self, adapter, mock_serial):
+        """Test error when IEEE header has 0 digit count."""
+        mock_serial.read.side_effect = [b"#0"]
+
+        with pytest.raises(ValueError) as excinfo:
+            adapter.read_binary()
+
+        assert "digit count is 0" in str(excinfo.value)
+
     def test_close(self, adapter, mock_serial):
         """Test closing the adapter."""
         adapter.close()

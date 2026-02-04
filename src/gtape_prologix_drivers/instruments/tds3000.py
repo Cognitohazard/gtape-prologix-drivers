@@ -646,7 +646,7 @@ class TDS3000Base:
             'bn_fmt': fields[3],            # Binary format (RI, RP)
             'byt_or': fields[4],            # Byte order (MSB, LSB)
             'nr_pt': int(fields[5]),        # Number of points
-            'wfid': fields[6].strip('"'),   # Waveform ID/description
+            'description': fields[6].strip('"'),  # Waveform ID (channel description)
             'pt_fmt': fields[7],            # Point format (Y, ENV)
             'xincr': float(fields[8]),      # Time per point
             'pt_off': float(fields[9]),     # Point offset
